@@ -1,0 +1,38 @@
+# Changelog
+
+All notable changes to this module are documented here. The format is based on
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this module
+adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.2.1] - 2026-06-01
+
+### Added
+- This changelog.
+
+## [0.2.0] - 2026-06-01
+
+### Added
+- Initial `ferrogate` module: deploys FerroGate's CMIS and MIA servers as
+  `systemd`-managed containers.
+- Container runtime auto-detection via the `ferrogate_container_runtime` fact
+  (podman preferred over docker), overridable with the `runtime` parameter.
+- **Podman**: rootless [Quadlet](https://docs.podman.io/en/latest/markdown/podman-systemd.unit.5.html)
+  `.container` units owned by a dedicated user, started through the user's
+  `systemd` instance with linger enabled.
+- **Docker**: a plain system unit wrapping `docker run`, managed by the native
+  `service` resource.
+- Configurable image reference (`registry`, `image_name`, `image_tag`) with a
+  Puppet-driven image pull.
+- Dedicated unprivileged `ferrogate` service account (uid/gid 10001).
+- Directory layout built on `ffquintella-baseapp` under
+  `/srv/application-{config,data,logs}/ferrogate`, with an optional
+  `app_environment` variant level (empty by default).
+- SELinux configuration: `:Z`/`:z` volume relabeling, persistent
+  `semanage fcontext` rules, and the `container_manage_cgroup` boolean for
+  rootless podman.
+- Per-instance environment files and the `ferrogate::instance` defined type for
+  CMIS and MIA.
+- rspec-puppet specs (run via `regent test`) and README.
+
+[0.2.1]: https://github.com/ffquintella/puppet-ferrogate/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/ffquintella/puppet-ferrogate/releases/tag/v0.2.0
