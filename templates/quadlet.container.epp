@@ -1,0 +1,39 @@
+<%- | String[1]            $svc,
+      String[1]            $command,
+      String[1]            $image,
+      String[1]            $env_file,
+      Array[String[1]]     $volumes,
+      Array[String[1]]     $ports,
+      Array[String[1]]     $devices,
+      Integer[0]           $uid,
+      Integer[0]           $gid,
+| -%>
+# Managed by Puppet (ferrogate) — do not edit by hand.
+# Rootless Podman Quadlet unit for the FerroGate <%= $command %> service.
+[Unit]
+Description=FerroGate <%= $command %> service
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+ContainerName=<%= $svc %>
+Image=<%= $image %>
+Exec=<%= $command %>
+EnvironmentFile=<%= $env_file %>
+<% $volumes.each |$v| { -%>
+Volume=<%= $v %>
+<% } -%>
+<% $ports.each |$p| { -%>
+PublishPort=<%= $p %>
+<% } -%>
+<% $devices.each |$d| { -%>
+AddDevice=<%= $d %>
+<% } -%>
+
+[Service]
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=120
+
+[Install]
+WantedBy=default.target

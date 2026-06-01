@@ -1,0 +1,7 @@
+---
+fixtures:
+  forge_modules:
+    stdlib: "puppetlabs/stdlib"
+    baseapp: "ffquintella/baseapp"
+  symlinks:
+    ferrogate: "#{source_dir}"

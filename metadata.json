@@ -1,0 +1,53 @@
+{
+  "author": "Felipe Quintella",
+  "dependencies": [
+    {
+      "name": "ffquintella-baseapp",
+      "version_requirement": ">= 0.1.0 < 2.0.0"
+    },
+    {
+      "name": "puppetlabs/stdlib",
+      "version_requirement": ">= 8.0.0 < 10.0.0"
+    }
+  ],
+  "description": "Deploys FerroGate (CMIS and MIA) as rootless podman (Quadlet) or docker containers, managed by systemd, with SELinux configuration and a dedicated service user.",
+  "issues_url": "",
+  "license": "Apache-2.0",
+  "name": "ferrogate",
+  "operatingsystem_support": [
+    {
+      "operatingsystem": "RedHat",
+      "operatingsystemrelease": ["8", "9"]
+    },
+    {
+      "operatingsystem": "CentOS",
+      "operatingsystemrelease": ["8", "9"]
+    },
+    {
+      "operatingsystem": "Rocky",
+      "operatingsystemrelease": ["8", "9"]
+    },
+    {
+      "operatingsystem": "AlmaLinux",
+      "operatingsystemrelease": ["8", "9"]
+    },
+    {
+      "operatingsystem": "Debian",
+      "operatingsystemrelease": ["11", "12"]
+    },
+    {
+      "operatingsystem": "Ubuntu",
+      "operatingsystemrelease": ["22.04", "24.04"]
+    }
+  ],
+  "project_page": "",
+  "requirements": [
+    {
+      "name": "puppet",
+      "version_requirement": ">= 6.0.0"
+    }
+  ],
+  "source": "",
+  "summary": "OpenVox module: ferrogate",
+  "version": "0.2.0"
+}
