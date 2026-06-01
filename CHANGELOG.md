@@ -4,6 +4,15 @@ All notable changes to this module are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this module
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] - 2026-06-01
+
+### Notes
+- Maintenance release. No functional changes to the `ferrogate` module.
+- Confirms that `ferrogate` lets the `baseapp` module own the shared
+  `/srv/application-*` roots and only manages its own `ferrogate/`
+  subdirectories, so it coexists with other baseapp-consuming modules on the
+  same node.
+
 ## [0.2.1] - 2026-06-01
 
 ### Added
