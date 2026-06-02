@@ -4,6 +4,15 @@ All notable changes to this module are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this module
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.3] - 2026-06-02
+
+### Fixed
+- `ferrogate::install` no longer collides with other modules that install the
+  container runtime package. The runtime `package` is now guarded with
+  `!defined()`, so it coexists with modules such as `bastionvault` that also
+  install `podman`, instead of raising a duplicate `Package[podman]`
+  declaration.
+
 ## [0.2.2] - 2026-06-01
 
 ### Notes

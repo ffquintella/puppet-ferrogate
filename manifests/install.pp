@@ -39,7 +39,12 @@ class ferrogate::install {
   }
 
   # --- Container runtime package --------------------------------------------
-  if $ferrogate::_manage_runtime {
+  # Guard with !defined() so the runtime package coexists with any other module
+  # that installs the same package on the node (e.g. bastionvault also installs
+  # podman, via ensure_packages). Without the guard, two plain `package {}`
+  # declarations collide with a duplicate-declaration error. Package[$runtime]
+  # stays addressable for the ordering arrows below.
+  if $ferrogate::_manage_runtime and !defined(Package[$runtime]) {
     package { $runtime:
       ensure => installed,
     }
