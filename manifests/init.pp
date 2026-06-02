@@ -179,6 +179,13 @@ class ferrogate (
   contain ferrogate::selinux
   contain ferrogate::service
 
+  # Host-side operator CLI wrapper. Only useful when CMIS is running, since the
+  # `ferrogate` CLI is a gRPC client of CMIS.
+  if $cmis_enable {
+    class { 'ferrogate::cli': }
+    contain ferrogate::cli
+  }
+
   # ferrogate::install must run *before* baseapp: baseapp chowns the
   # /srv/application-* roots to the ferrogate user/group, so it auto-requires
   # User/Group[ferrogate] — which install creates. Ordering baseapp first would
@@ -189,4 +196,8 @@ class ferrogate (
   -> Class['ferrogate::config']
   -> Class['ferrogate::selinux']
   -> Class['ferrogate::service']
+
+  if $cmis_enable {
+    Class['ferrogate::service'] -> Class['ferrogate::cli']
+  }
 }

@@ -1,0 +1,10 @@
+<%- | String[1] $group,
+      String[1] $container,
+| -%>
+# Managed by Puppet — ferrogate module. Do not edit by hand.
+# Lets members of the <%= $group %> group drive the in-container `ferrogate`
+# operator CLI through /usr/local/bin/ferrogate, without a password. Exec into
+# the container as root. The two command forms differ only by the interactive
+# `-t` flag the wrapper adds when attached to a terminal.
+%<%= $group %> ALL=(root) NOPASSWD: /usr/bin/docker exec -i <%= $container %> ferrogate *, /usr/bin/docker exec -i -t <%= $container %> ferrogate *
+Defaults:%<%= $group %> !requiretty

@@ -1,0 +1,39 @@
+<%- | String[1]  $container,
+      Integer[0] $container_port,
+| -%>
+#!/bin/sh
+# Managed by Puppet — ferrogate module. Do not edit by hand.
+#
+# Host entry point for the FerroGate operator CLI (docker). The `ferrogate` CLI
+# binary lives INSIDE the running cmis container; this wrapper re-execs into it
+# so the CLI's default endpoint (the container's own loopback) reaches CMIS
+# directly — no host port publication or TLS trust anchor is needed.
+#
+# Usage: ferrogate <command> [args]      (status, list-svids, revoke-svid, ...)
+set -eu
+
+CONTAINER='<%= $container %>'
+# In-container CMIS endpoint. Pinned to the configured container port so a
+# non-default cmis_container_port still resolves; an operator-supplied
+# --endpoint later on the command line overrides this (the CLI honours the
+# last --endpoint it sees).
+ENDPOINT='http://127.0.0.1:<%= $container_port %>'
+
+# Allocate a pseudo-TTY only when stdin AND stdout are terminals (interactive
+# use). Both forms (`-i` and `-i -t`) are pre-authorised in the sudoers drop-in.
+if [ -t 0 ] && [ -t 1 ]; then
+  TTY_ARGS='-i -t'
+else
+  TTY_ARGS='-i'
+fi
+
+# Move off the caller's working directory (often /root, mode 0700) before
+# re-exec'ing as root.
+cd / || exit 1
+
+# Exec into the container as root.
+# $TTY_ARGS is intentionally word-split into separate exec flags.
+# shellcheck disable=SC2086
+exec /usr/bin/sudo -n \
+  /usr/bin/docker exec $TTY_ARGS "$CONTAINER" \
+  ferrogate --endpoint "$ENDPOINT" "$@"

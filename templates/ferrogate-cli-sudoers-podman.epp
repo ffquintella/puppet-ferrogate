@@ -1,0 +1,13 @@
+<%- | String[1]  $user,
+      String[1]  $group,
+      Integer[0] $uid,
+      String[1]  $container,
+| -%>
+# Managed by Puppet — ferrogate module. Do not edit by hand.
+# Lets members of the <%= $group %> group drive the in-container `ferrogate`
+# operator CLI through /usr/local/bin/ferrogate, without a password. Run as the
+# rootless service user so we reach its container storage. The two command
+# forms differ only by the interactive `-t` flag the wrapper adds when attached
+# to a terminal.
+%<%= $group %> ALL=(<%= $user %>) NOPASSWD: /usr/bin/env XDG_RUNTIME_DIR=/run/user/<%= $uid %> /usr/bin/podman exec -i <%= $container %> ferrogate *, /usr/bin/env XDG_RUNTIME_DIR=/run/user/<%= $uid %> /usr/bin/podman exec -i -t <%= $container %> ferrogate *
+Defaults:%<%= $group %> !requiretty

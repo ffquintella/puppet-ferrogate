@@ -74,6 +74,29 @@ class { 'ferrogate':
 
 All parameters can be driven from Hiera.
 
+## Operator CLI
+
+When CMIS is enabled the module installs a host wrapper at
+`/usr/local/bin/ferrogate`. The `ferrogate` operator CLI binary ships *inside*
+the server image; the wrapper re-execs into the running `ferrogate-cmis`
+container so the CLI's gRPC client reaches CMIS over the container's own
+loopback — no published host port or TLS trust anchor is needed.
+
+```console
+$ ferrogate status
+$ ferrogate list-svids
+$ ferrogate revoke-host spiffe://example.org/host/abc
+```
+
+- **podman** — the wrapper `sudo`s to the rootless service user, then
+  `podman exec`s the container. **docker** — it `sudo`s to root and
+  `docker exec`s.
+- A `/etc/sudoers.d/ferrogate-cli` drop-in lets members of the FerroGate group
+  (`group`, default `ferrogate`) run the CLI without a password. Add operators
+  to that group to grant access.
+- Point at a different node with `--endpoint <url>` (or
+  `FERROGATE_CMIS_ENDPOINT`); by default it talks to the local container.
+
 ## Reference
 
 Key parameters (see the puppet-strings docs in

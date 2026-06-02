@@ -4,6 +4,20 @@ All notable changes to this module are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this module
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-06-02
+
+### Added
+- Host-side `ferrogate` operator CLI wrapper. When CMIS is enabled the module
+  installs `/usr/local/bin/ferrogate`, which re-execs into the running
+  `ferrogate-cmis` container and runs the in-container operator CLI (`status`,
+  `list-svids`, `revoke-svid`, `revoke-host`, `bump-epoch`). The CLI's gRPC
+  client reaches CMIS over the container's own loopback, so no published host
+  port or TLS trust anchor is needed; the wrapper pins `--endpoint` to the
+  configured `cmis_container_port` (overridable on the command line). For
+  podman it `sudo`s to the rootless service user and `podman exec`s; for docker
+  it `sudo`s to root and `docker exec`s. A `/etc/sudoers.d/ferrogate-cli`
+  drop-in grants passwordless access to members of the FerroGate group.
+
 ## [0.2.6] - 2026-06-02
 
 ### Fixed

@@ -103,6 +103,33 @@ describe 'ferrogate' do
       is_expected.to contain_exec('ferrogate-selinux-container_manage_cgroup')
       is_expected.to contain_exec('ferrogate-fcontext-/srv/application-data/ferrogate')
     end
+
+    it 'installs the host-side ferrogate operator CLI wrapper' do
+      is_expected.to contain_class('ferrogate::cli')
+      is_expected.to contain_file('/usr/local/bin/ferrogate').with(
+        owner: 'root',
+        group: 'root',
+        mode:  '0755',
+      )
+    end
+
+    it 'execs into the cmis container as the rootless service user' do
+      is_expected.to contain_file('/usr/local/bin/ferrogate')
+        .with_content(%r{sudo -n -u ferrogate})
+        .with_content(%r{XDG_RUNTIME_DIR=/run/user/10001})
+        .with_content(%r{/usr/bin/podman exec \$TTY_ARGS "\$CONTAINER"})
+        .with_content(%r{ENDPOINT='http://127\.0\.0\.1:8443'})
+    end
+
+    it 'authorises the ferrogate group to run the CLI via sudoers' do
+      is_expected.to contain_file('/etc/sudoers.d/ferrogate-cli').with(
+        mode:         '0440',
+        validate_cmd: '/usr/sbin/visudo -cf %',
+      )
+      is_expected.to contain_file('/etc/sudoers.d/ferrogate-cli')
+        .with_content(%r{%ferrogate ALL=\(ferrogate\) NOPASSWD:})
+        .with_content(%r{/usr/bin/podman exec -i ferrogate-cmis ferrogate \*})
+    end
   end
 
   context 'with an environment variant' do
@@ -144,6 +171,14 @@ describe 'ferrogate' do
     it 'declares the cmis instance (docker unit rendered by the define)' do
       is_expected.to contain_ferrogate__instance('cmis').with(command: 'cmis')
     end
+
+    it 'installs a docker-flavoured CLI wrapper and sudoers entry' do
+      is_expected.to contain_file('/usr/local/bin/ferrogate')
+        .with_content(%r{/usr/bin/docker exec \$TTY_ARGS "\$CONTAINER"})
+      is_expected.to contain_file('/etc/sudoers.d/ferrogate-cli')
+        .with_content(%r{%ferrogate ALL=\(root\) NOPASSWD:})
+        .with_content(%r{/usr/bin/docker exec -i ferrogate-cmis ferrogate \*})
+    end
   end
 
   context 'with a configurable registry and tag' do
@@ -172,6 +207,22 @@ describe 'ferrogate' do
 
     it 'still renders the cmis env file' do
       is_expected.to contain_file('/srv/application-config/ferrogate/cmis.env')
+    end
+
+    it 'still installs the operator CLI wrapper' do
+      is_expected.to contain_file('/usr/local/bin/ferrogate')
+    end
+  end
+
+  context 'with cmis disabled' do
+    let(:facts) { BASE_FACTS }
+    let(:params) { { cmis_enable: false } }
+
+    it { is_expected.to compile }
+
+    it 'does not install the operator CLI wrapper (no server to talk to)' do
+      is_expected.not_to contain_class('ferrogate::cli')
+      is_expected.not_to contain_file('/usr/local/bin/ferrogate')
     end
   end
 end
