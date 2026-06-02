@@ -4,6 +4,16 @@ All notable changes to this module are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this module
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.5] - 2026-06-02
+
+### Fixed
+- Rootless podman image pulls failed with "potentially insufficient UIDs or
+  GIDs available in user namespace" because the `system` service user had no
+  `/etc/subuid` / `/etc/subgid` ranges (`useradd` does not allocate them for
+  system users). `ferrogate::install` now adds a deterministic, uid-derived
+  65536-id subordinate range via `usermod --add-subuids/--add-subgids` and runs
+  `podman system migrate` before the pull so the new mapping takes effect.
+
 ## [0.2.4] - 2026-06-02
 
 ### Fixed

@@ -35,6 +35,20 @@ describe 'ferrogate' do
       is_expected.to contain_exec('ferrogate-enable-linger')
     end
 
+    it 'allocates subordinate UID/GID ranges for the rootless user' do
+      is_expected.to contain_exec('ferrogate-add-subids').with(
+        command: 'usermod --add-subuids 655425536-655491071 --add-subgids 655425536-655491071 ferrogate',
+      )
+    end
+
+    it 'migrates podman storage before pulling so the new subids take effect' do
+      is_expected.to contain_exec('ferrogate-podman-migrate').with(
+        command: 'podman system migrate',
+        user:    'ferrogate',
+      )
+      is_expected.to contain_exec('ferrogate-pull-image').that_requires('Exec[ferrogate-podman-migrate]')
+    end
+
     it 'pulls the image rootless as the service user' do
       is_expected.to contain_exec('ferrogate-pull-image').with(
         command: 'podman pull ferrogate:latest',
