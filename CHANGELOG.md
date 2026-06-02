@@ -4,6 +4,26 @@ All notable changes to this module are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this module
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.3] - 2026-06-02
+
+### Fixed
+- Rootless podman containers could not write their bind-mounted log/audit
+  volumes (`tee: /opt/ferrogate/logs/cmis.log: Permission denied`, audit signer
+  failures). The image runs as a non-root user (uid 10001); rootless podman
+  remaps that internal id to a host subordinate id (`subid_start + uid - 1`),
+  so volumes owned by the login user — which only owns container id 0 — are not
+  writable by the container. `keep-id` (which would let the container keep the
+  login uid) is broken on podman 5.x + EL10/UEK (crun `ping_group_range` then
+  `devpts` `Invalid argument`), and idmapped mounts cannot remap the login uid
+  (`mount_setattr: Operation not permitted`). Instead, `ferrogate::config` now
+  owns the log/audit volumes by the *mapped* id, and `ferrogate::install`
+  creates a companion `<user>-pod` account at that id (when `manage_user`) so
+  the ownership is a readable named account. Docker is unaffected (no remap).
+  Verified end-to-end on the target host. **Depends on stable subuids** — set
+  `subid_management => 'podman'` on nodes where puppet/podman manages
+  `/etc/subuid` (otherwise the ranges are purged and the container falls back to
+  the overflow uid).
+
 ## [0.3.2] - 2026-06-02
 
 ### Fixed

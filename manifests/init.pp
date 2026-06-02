@@ -45,7 +45,14 @@
 # @param gid
 #   GID for the dedicated group.
 # @param manage_user
-#   Whether to manage the dedicated user/group.
+#   Whether to manage the dedicated user/group. For podman this also creates a
+#   companion `<user>-pod` account whose uid/gid is the *mapped* id the rootless
+#   container's internal user resolves to (`subid_start + uid - 1`); the
+#   bind-mounted log/audit volumes are owned by it so the non-root container can
+#   write them. (Rootless podman remaps the container's internal uid to a
+#   subordinate id, so the login user — which only owns container id 0 — cannot
+#   own the volumes; `keep-id`, which would avoid the remap, is broken on
+#   podman 5.x + EL10/UEK.)
 # @param subid_management
 #   How rootless podman's subordinate UID/GID ranges (`/etc/subuid`,
 #   `/etc/subgid`) are allocated for the dedicated user:
@@ -170,6 +177,8 @@ class ferrogate (
   $_subid_management   = $subid_management
   $_subid_start        = $subid_start
   $_subid_count        = $subid_count
+  $_pod_user           = "${user}-pod"
+  $_pod_group          = "${group}-pod"
   $_manage_runtime     = $manage_runtime
   $_pull_image         = $pull_image
   $_manage_selinux     = $manage_selinux

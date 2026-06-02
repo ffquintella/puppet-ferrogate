@@ -61,11 +61,10 @@ describe 'ferrogate' do
       is_expected.to contain_class('baseapp')
     end
 
+    # config/data roots stay owned by the login user.
     ['/srv/application-config/ferrogate',
-     '/srv/application-data/ferrogate',
-     '/srv/application-data/ferrogate/audit',
-     '/srv/application-logs/ferrogate'].each do |dir|
-      it "manages directory #{dir}" do
+     '/srv/application-data/ferrogate'].each do |dir|
+      it "manages directory #{dir} owned by the login user" do
         is_expected.to contain_file(dir).with(
           ensure: 'directory',
           owner:  'ferrogate',
@@ -73,6 +72,29 @@ describe 'ferrogate' do
           mode:   '0750',
         )
       end
+    end
+
+    # Bind-mounted volumes are owned by the host id the rootless container's
+    # internal uid/gid (10001) maps to: subid_start (10001*65536) + 10001 - 1.
+    ['/srv/application-data/ferrogate/audit',
+     '/srv/application-logs/ferrogate'].each do |dir|
+      it "manages volume directory #{dir} owned by the container-mapped id" do
+        is_expected.to contain_file(dir).with(
+          ensure: 'directory',
+          owner:  655_435_536,
+          group:  655_435_536,
+          mode:   '0750',
+        )
+      end
+    end
+
+    it 'creates the container-mapped owner account' do
+      is_expected.to contain_group('ferrogate-pod').with(gid: 655_435_536, system: true)
+      is_expected.to contain_user('ferrogate-pod').with(
+        uid:    655_435_536,
+        gid:    655_435_536,
+        system: true,
+      )
     end
 
     it 'renders the cmis and mia env files' do

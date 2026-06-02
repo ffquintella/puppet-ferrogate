@@ -10,21 +10,51 @@ class ferrogate::config {
 
   $user       = $ferrogate::_user
   $group      = $ferrogate::_group
+  $uid        = $ferrogate::_uid
+  $gid        = $ferrogate::_gid
+  $runtime    = $ferrogate::_runtime
   $config_dir = $ferrogate::config_dir
   $data_dir   = $ferrogate::data_dir
   $logs_dir   = $ferrogate::logs_dir
   $audit_dir  = $ferrogate::audit_dir
 
-  # --- Directory tree under the baseapp roots -------------------------------
-  # /srv/application-config/ferrogate[/<env>]
-  # /srv/application-data/ferrogate[/<env>]/audit
-  # /srv/application-logs/ferrogate[/<env>]
-  $_dirs = [$config_dir, $data_dir, $logs_dir, $audit_dir]
+  # The bind-mounted volumes (logs, audit) are written *from inside* the
+  # container by its non-root user. Under rootless podman that internal id is
+  # remapped to a host subordinate id (container id C -> subid_start + (C - 1)),
+  # so the volumes must be owned by that mapped id rather than the login user
+  # (which only owns container id 0). Compute it locally — the test evaluator
+  # does not resolve a function default computed across the class boundary.
+  # Under docker there is no remap: the container runs as the login uid directly.
+  if $runtime == 'podman' {
+    $_subid_start = $ferrogate::_subid_start ? {
+      undef   => $uid * 65536,
+      default => $ferrogate::_subid_start,
+    }
+    $_vol_owner = $_subid_start + $uid - 1
+    $_vol_group = $_subid_start + $gid - 1
+  } else {
+    $_vol_owner = $user
+    $_vol_group = $group
+  }
 
-  file { $_dirs:
+  # --- Directory tree under the baseapp roots -------------------------------
+  # /srv/application-config/ferrogate[/<env>]      (login-user owned)
+  # /srv/application-data/ferrogate[/<env>]        (login-user owned)
+  # /srv/application-data/ferrogate[/<env>]/audit  (container-mapped owner)
+  # /srv/application-logs/ferrogate[/<env>]        (container-mapped owner)
+  file { [$config_dir, $data_dir]:
     ensure => directory,
     owner  => $user,
     group  => $group,
+    mode   => '0750',
+  }
+
+  # Volumes mounted into the container — owned by the (possibly remapped) id the
+  # container process writes as. See the comment above.
+  file { [$logs_dir, $audit_dir]:
+    ensure => directory,
+    owner  => $_vol_owner,
+    group  => $_vol_group,
     mode   => '0750',
   }
 

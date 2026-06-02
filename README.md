@@ -140,7 +140,16 @@ Key parameters (see the puppet-strings docs in
   where the `puppet/podman` module already manages `/etc/subuid` and
   `/etc/subgid` via concat (for example alongside `bastionvault`), set
   `subid_management => 'podman'` so FerroGate registers its ranges as concat
-  fragments instead of having them purged each run.
+  fragments instead of having them purged each run. **Stable subuids are
+  required** — if they are purged, the rootless container falls back to the
+  overflow uid and cannot write its volumes.
+- The container image runs as a non-root user (uid 10001). Under rootless podman
+  that internal id is remapped to a host subordinate id, so the bind-mounted
+  log/audit volumes are owned by a companion `<user>-pod` account at the mapped
+  id (`subid_start + uid - 1`), not by the login user. (`keep-id`, which would
+  let the container keep the login uid, is broken on podman 5.x + EL10/UEK —
+  crun `ping_group_range`/`devpts` errors — so the mapped-owner approach is used
+  instead.) Under docker there is no remap and the volumes are login-user owned.
 
 ## Development
 

@@ -107,6 +107,37 @@ class ferrogate::install {
           # 'none': subids managed elsewhere; do nothing here.
         }
       }
+
+      # Rootless podman remaps the container's internal uid/gid (the image's
+      # built-in user, == $uid/$gid here) through the subordinate ranges:
+      # container id C -> host id subid_start + (C - 1). The image runs as a
+      # non-root user, so its bind-mounted volumes must be owned on the host by
+      # that *mapped* id, not by the login user (which only owns container id 0).
+      # Create a named account at the mapped id so the volume ownership (set in
+      # ferrogate::config) is readable rather than a bare number. keep-id, which
+      # would avoid the remap, is broken on podman 5.x + EL10/UEK (crun
+      # ping_group_range/devpts errors); this mapped-owner approach lets the
+      # container keep running as its non-root user.
+      $_pod_uid = $_subid_start + $uid - 1
+      $_pod_gid = $_subid_start + $gid - 1
+
+      group { $ferrogate::_pod_group:
+        ensure => present,
+        gid    => $_pod_gid,
+        system => true,
+      }
+
+      user { $ferrogate::_pod_user:
+        ensure     => present,
+        uid        => $_pod_uid,
+        gid        => $_pod_gid,
+        home       => '/nonexistent',
+        managehome => false,
+        shell      => '/usr/sbin/nologin',
+        system     => true,
+        comment    => 'FerroGate rootless container-mapped volume owner',
+        require    => Group[$ferrogate::_pod_group],
+      }
     }
     if $ferrogate::_manage_runtime {
       Package[$runtime] -> Exec['ferrogate-enable-linger']
