@@ -63,16 +63,37 @@ define ferrogate::instance (
   }
 
   if $runtime == 'podman' {
-    $_unit_dir = "/home/${user}/.config/containers/systemd"
-    $_xdg      = "/run/user/${uid}"
-    $_sysd     = "XDG_RUNTIME_DIR=${_xdg}"
+    $_config_dir = "/home/${user}/.config"
+    $_cont_dir   = "${_config_dir}/containers"
+    $_unit_dir   = "${_cont_dir}/systemd"
+    $_xdg        = "/run/user/${uid}"
+    $_sysd       = "XDG_RUNTIME_DIR=${_xdg}"
+
+    # Puppet does not create parent directories implicitly, and `recurse` only
+    # manages children downward, never the path above. Declare the full chain
+    # (~/.config -> containers -> systemd) so the Quadlet unit dir can be
+    # created on a fresh user home. Shared across instances via ensure_resource.
+    ensure_resource('file', $_config_dir, {
+        'ensure' => 'directory',
+        'owner'  => $user,
+        'group'  => $ferrogate::_group,
+        'mode'   => '0700',
+    })
+
+    ensure_resource('file', $_cont_dir, {
+        'ensure'  => 'directory',
+        'owner'   => $user,
+        'group'   => $ferrogate::_group,
+        'mode'    => '0700',
+        'require' => File[$_config_dir],
+    })
 
     ensure_resource('file', $_unit_dir, {
         'ensure'  => 'directory',
         'owner'   => $user,
         'group'   => $ferrogate::_group,
         'mode'    => '0700',
-        'recurse' => true,
+        'require' => File[$_cont_dir],
     })
 
     file { "${_unit_dir}/${svc}.container":

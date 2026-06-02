@@ -4,6 +4,19 @@ All notable changes to this module are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this module
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-06-02
+
+### Fixed
+- Rootless podman Quadlet unit directory creation no longer fails on a fresh
+  service-user home. `ferrogate::instance` declared only
+  `~/.config/containers/systemd` (with `recurse`, which manages children, not
+  parents); Puppet does not create parent directories implicitly, so on a new
+  `~/.config` the leaf-dir `File` failed with "parent directory ... does not
+  exist", cascading skips through the `.container` units, user daemon-reload,
+  enable execs, and the CLI stage. The full chain (`~/.config` →
+  `containers` → `systemd`) is now declared with ordered requires, shared
+  across instances via `ensure_resource`.
+
 ## [0.3.0] - 2026-06-02
 
 ### Added
