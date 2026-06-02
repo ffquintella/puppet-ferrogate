@@ -179,8 +179,13 @@ class ferrogate (
   contain ferrogate::selinux
   contain ferrogate::service
 
-  Class['baseapp']
-  -> Class['ferrogate::install']
+  # ferrogate::install must run *before* baseapp: baseapp chowns the
+  # /srv/application-* roots to the ferrogate user/group, so it auto-requires
+  # User/Group[ferrogate] — which install creates. Ordering baseapp first would
+  # form a dependency cycle (baseapp's File -> needs install's Group -> install
+  # ordered after baseapp).
+  Class['ferrogate::install']
+  -> Class['baseapp']
   -> Class['ferrogate::config']
   -> Class['ferrogate::selinux']
   -> Class['ferrogate::service']

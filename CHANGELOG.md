@@ -4,6 +4,16 @@ All notable changes to this module are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this module
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.4] - 2026-06-02
+
+### Fixed
+- Resolved a resource dependency cycle. `baseapp` chowns the
+  `/srv/application-*` roots to the ferrogate user/group and therefore
+  auto-requires `User`/`Group[ferrogate]`, which `ferrogate::install` creates.
+  `ferrogate::install` is now ordered *before* `baseapp` (previously after),
+  breaking the `File[/srv/application-config] -> Class[baseapp] ->
+  Class[ferrogate::install] -> Group[ferrogate] -> File[...]` cycle.
+
 ## [0.2.3] - 2026-06-02
 
 ### Fixed
