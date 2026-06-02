@@ -86,7 +86,12 @@
 # @param cmis_container_port
 #   Container-side port CMIS listens on. Must match the port in `cmis_listen`.
 # @param mia_enable
-#   Deploy the MIA (Machine Identity Agent) instance.
+#   Deploy the MIA (Machine Identity Agent) as a container. **Defaults to
+#   `false`**: the standard FerroGate image is CMIS-only — it ships the `cmis`
+#   server and the `ferrogate` CLI but no `mia` binary, and its entrypoint
+#   expects MIA to be installed on the host from its OS package rather than run
+#   in a container. Only enable this against an image that actually bundles
+#   `mia`, on a host prepared for the MIA hardening profile.
 # @param mia_tpm_device
 #   Host TPM resource-manager device handed to the MIA container.
 # @param mia_skip_hardening
@@ -97,7 +102,7 @@
 # @param extra_env
 #   Extra environment variables merged into every instance's env file.
 #
-# @example Defaults — deploy both CMIS and MIA with podman, rootless
+# @example Defaults — deploy CMIS with podman, rootless (MIA off; see mia_enable)
 #   include ferrogate
 #
 # @example Pull from a private registry, pin a tag, use docker
@@ -134,7 +139,7 @@ class ferrogate (
   String[1]                        $cmis_listen        = '0.0.0.0:8443',
   Stdlib::Port                     $cmis_port          = 8443,
   Stdlib::Port                     $cmis_container_port = 8443,
-  Boolean                          $mia_enable         = true,
+  Boolean                          $mia_enable         = false,
   Stdlib::Absolutepath             $mia_tpm_device     = '/dev/tpmrm0',
   Boolean                          $mia_skip_hardening = true,
   Hash[String[1], String]          $extra_env          = {},
@@ -229,7 +234,12 @@ class ferrogate (
   -> Class['ferrogate::selinux']
   -> Class['ferrogate::service']
 
+  # The CLI wrapper is a static host script; writing it does not require the
+  # container to be running. Order it after `install` (which creates the service
+  # user the wrapper sudo's to) rather than after the whole `service` class, so a
+  # container-start failure (e.g. an unsupported MIA image) cannot skip the
+  # wrapper and the sudoers drop-in.
   if $cmis_enable {
-    Class['ferrogate::service'] -> Class['ferrogate::cli']
+    Class['ferrogate::install'] -> Class['ferrogate::cli']
   }
 }

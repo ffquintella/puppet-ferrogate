@@ -40,7 +40,10 @@ optional **environment variant** (empty by default):
 
 ## Usage
 
-### Defaults — both services, rootless podman
+### Defaults — CMIS only, rootless podman
+
+The standard image is CMIS-only, so MIA is off by default (see
+[Limitations](#limitations)).
 
 ```puppet
 include ferrogate
@@ -64,11 +67,14 @@ class { 'ferrogate':
 }
 ```
 
-### CMIS only
+### Enable MIA as a container
+
+Only against an image that bundles the `mia` binary, on a host prepared for the
+MIA hardening profile (see [Limitations](#limitations)):
 
 ```puppet
 class { 'ferrogate':
-  mia_enable => false,
+  mia_enable => true,
 }
 ```
 
@@ -115,7 +121,7 @@ Key parameters (see the puppet-strings docs in
 | `cmis_listen`         | `'0.0.0.0:8443'` | `CMIS_LISTEN` inside the container.                      |
 | `cmis_port`           | `8443`           | Host port published for CMIS.                            |
 | `cmis_container_port` | `8443`           | Container port CMIS listens on (match `cmis_listen`).    |
-| `mia_enable`          | `true`           | Deploy MIA.                                              |
+| `mia_enable`          | `false`          | Deploy MIA as a container (standard image is CMIS-only). |
 | `mia_tpm_device`      | `'/dev/tpmrm0'`  | Host TPM device handed to MIA.                           |
 | `mia_skip_hardening`  | `true`           | Set `FERROGATE_SKIP_HARDENING=1` (containers can't meet the full profile). |
 | `manage_selinux`      | `true`           | Apply SELinux config (no-op when SELinux is disabled).   |
@@ -130,7 +136,14 @@ Key parameters (see the puppet-strings docs in
 
 - Linux only. Supported on the RedHat and Debian families (see
   `metadata.json`).
-- **MIA in a container** cannot satisfy FerroGate's host-hardening profile
+- **MIA is not in the standard image.** The published FerroGate image is
+  CMIS-only — it ships the `cmis` server and the `ferrogate` CLI, and its
+  entrypoint expects the MIA host agent to be installed on each machine from its
+  OS package, not run as a container. `mia_enable` therefore defaults to
+  `false`; enabling it against the standard image makes the MIA unit fail
+  (`exec: mia: not found`). Only set `mia_enable => true` against an image that
+  actually bundles the `mia` binary.
+- **MIA in a container** also cannot satisfy FerroGate's host-hardening profile
   (enforced IMA, seccomp install, privilege drop). `mia_skip_hardening` defaults
   to `true`; for a production MIA host that runs the full profile, set it to
   `false` on a host prepared for it, or run MIA outside a container.
