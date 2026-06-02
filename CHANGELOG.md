@@ -4,6 +4,28 @@ All notable changes to this module are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this module
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] - 2026-06-02
+
+### Fixed
+- Rootless podman instances are now `systemctl --user start`ed rather than
+  `enable --now`d. Quadlet generates the `.service` unit from the `.container`
+  file, so it is transient/generated and cannot be enabled ("Unit ... is
+  transient or generated"), which aborted the run and skipped the CLI stage.
+  Boot autostart is already wired by the unit's `[Install]
+  WantedBy=default.target` (the generator creates the wants-symlink on each
+  daemon-reload; linger starts it at boot), so only a runtime `start`/`stop`
+  is needed.
+
+### Added
+- `subid_management` parameter (`'usermod'` (default) / `'podman'` / `'none'`)
+  plus `subid_start` / `subid_count`. On nodes where the `puppet/podman`
+  module manages `/etc/subuid` and `/etc/subgid` via concat (e.g. alongside
+  bastionvault), set `subid_management => 'podman'` to register the service
+  user's ranges as `podman::subuid`/`podman::subgid` concat fragments. The
+  previous `usermod` exec appends outside concat, so the podman module purged
+  the ranges every run — a flap that breaks rootless podman. `'none'` leaves
+  subid allocation entirely to an external manager.
+
 ## [0.3.1] - 2026-06-02
 
 ### Fixed

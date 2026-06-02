@@ -117,8 +117,15 @@ define ferrogate::instance (
     }
 
     if $ensure == 'running' {
-      exec { "ferrogate-user-enable-${command}":
-        command     => "systemctl --user enable --now ${svc}.service",
+      # Quadlet generates the `.service` unit from the `.container` file, so it
+      # is a transient/generated unit that cannot be `systemctl enable`d
+      # ("Unit ... is transient or generated"). Boot autostart is instead wired
+      # by the `[Install] WantedBy=default.target` section in the unit, which
+      # the generator turns into a wants-symlink on each daemon-reload (and
+      # linger, enabled in install.pp, lets the user manager start it at boot).
+      # So the only runtime action here is to start it.
+      exec { "ferrogate-user-start-${command}":
+        command     => "systemctl --user start ${svc}.service",
         path        => ['/usr/bin', '/bin'],
         user        => $user,
         cwd         => "/home/${user}",
@@ -128,8 +135,8 @@ define ferrogate::instance (
         subscribe   => File["${_unit_dir}/${svc}.container"],
       }
     } else {
-      exec { "ferrogate-user-disable-${command}":
-        command     => "systemctl --user disable --now ${svc}.service",
+      exec { "ferrogate-user-stop-${command}":
+        command     => "systemctl --user stop ${svc}.service",
         path        => ['/usr/bin', '/bin'],
         user        => $user,
         cwd         => "/home/${user}",

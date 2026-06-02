@@ -135,8 +135,12 @@ Key parameters (see the puppet-strings docs in
   to `true`; for a production MIA host that runs the full profile, set it to
   `false` on a host prepared for it, or run MIA outside a container.
 - Rootless podman requires `systemd` linger and `subuid`/`subgid` ranges for the
-  service user (the module enables linger; most distros seed the ID ranges on
-  user creation).
+  service user. The module enables linger and, by default
+  (`subid_management => 'usermod'`), allocates the ID ranges itself. On a node
+  where the `puppet/podman` module already manages `/etc/subuid` and
+  `/etc/subgid` via concat (for example alongside `bastionvault`), set
+  `subid_management => 'podman'` so FerroGate registers its ranges as concat
+  fragments instead of having them purged each run.
 
 ## Development
 

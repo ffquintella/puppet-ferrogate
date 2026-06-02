@@ -46,6 +46,23 @@
 #   GID for the dedicated group.
 # @param manage_user
 #   Whether to manage the dedicated user/group.
+# @param subid_management
+#   How rootless podman's subordinate UID/GID ranges (`/etc/subuid`,
+#   `/etc/subgid`) are allocated for the dedicated user:
+#     * `'usermod'` (default) — standalone `usermod --add-subuids/--add-subgids`
+#       exec. Use on nodes where nothing else manages these files.
+#     * `'podman'` — declare `podman::subuid`/`podman::subgid` (from the
+#       puppet/podman module) so the ranges integrate with that module's
+#       concat-managed files instead of being purged by it. Use on nodes where
+#       puppet/podman is in play (e.g. alongside bastionvault). **Requires** the
+#       puppet/podman module installed and its `podman` class declared.
+#     * `'none'` — do not manage subids here (an operator/another module does).
+#   Ignored for the docker runtime.
+# @param subid_start
+#   First subordinate id for the dedicated user. Defaults to `uid * 65536`, a
+#   deterministic per-user block that does not overlap other users' ranges.
+# @param subid_count
+#   Size of the subordinate id block. Defaults to 65536.
 # @param manage_selinux
 #   Whether to apply SELinux configuration (no-op when SELinux is disabled).
 # @param selinux_relabel
@@ -100,6 +117,9 @@ class ferrogate (
   Integer[0]                       $uid                = 10001,
   Integer[0]                       $gid                = 10001,
   Boolean                          $manage_user        = true,
+  Enum['usermod', 'podman', 'none'] $subid_management   = 'usermod',
+  Optional[Integer[0]]             $subid_start        = undef,
+  Integer[1]                       $subid_count        = 65536,
   Boolean                          $manage_selinux     = true,
   Enum['Z', 'z', 'none']           $selinux_relabel    = 'Z',
   String[1]                        $rust_log           = 'info',
@@ -147,6 +167,9 @@ class ferrogate (
   $_uid                = $uid
   $_gid                = $gid
   $_manage_user        = $manage_user
+  $_subid_management   = $subid_management
+  $_subid_start        = $subid_start
+  $_subid_count        = $subid_count
   $_manage_runtime     = $manage_runtime
   $_pull_image         = $pull_image
   $_manage_selinux     = $manage_selinux

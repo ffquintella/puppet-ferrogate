@@ -56,20 +56,56 @@ class ferrogate::install {
     # system users, so without an explicit range image layers that carry
     # non-root ownership (e.g. /etc/gshadow, gid 42) fail to unpack with
     # "potentially insufficient UIDs or GIDs available in user namespace".
-    # Give the user its own contiguous 65536-id block, derived from its uid so
+    # Give the user its own contiguous block, derived from its uid by default so
     # it is deterministic and does not overlap other users' blocks.
+    # Default the start to a deterministic per-uid block when unset. Computed
+    # here from the local $uid rather than in init.pp because the test
+    # evaluator does not resolve a pick()/function default across the class
+    # boundary, whereas a plain qualified body var (e.g. $ferrogate::_uid) does.
+    $_subid_count = $ferrogate::_subid_count
+    $_subid_start = $ferrogate::_subid_start ? {
+      undef   => $uid * 65536,
+      default => $ferrogate::_subid_start,
+    }
+
     if $manage_user {
       User[$user] -> Exec['ferrogate-enable-linger']
 
-      $_subid_start = $uid * 65536
-      $_subid_end   = $_subid_start + 65535
+      case $ferrogate::_subid_management {
+        'usermod': {
+          # Standalone: append directly with usermod. Only safe when nothing
+          # else owns /etc/subuid|subgid. If the puppet/podman module manages
+          # them (concat), it will purge these entries every run — switch to
+          # `subid_management => 'podman'` on such nodes.
+          $_subid_end = $_subid_start + $_subid_count - 1
 
-      exec { 'ferrogate-add-subids':
-        command => "usermod --add-subuids ${_subid_start}-${_subid_end} --add-subgids ${_subid_start}-${_subid_end} ${user}",
-        path    => ['/usr/sbin', '/sbin', '/usr/bin', '/bin'],
-        unless  => "grep -q '^${user}:' /etc/subuid && grep -q '^${user}:' /etc/subgid",
-        require => User[$user],
-        before  => Exec['ferrogate-enable-linger'],
+          exec { 'ferrogate-add-subids':
+            command => "usermod --add-subuids ${_subid_start}-${_subid_end} --add-subgids ${_subid_start}-${_subid_end} ${user}",
+            path    => ['/usr/sbin', '/sbin', '/usr/bin', '/bin'],
+            unless  => "grep -q '^${user}:' /etc/subuid && grep -q '^${user}:' /etc/subgid",
+            require => User[$user],
+            before  => Exec['ferrogate-enable-linger'],
+          }
+        }
+        'podman': {
+          # Register the ranges through the puppet/podman module so they become
+          # concat fragments of its managed /etc/subuid|subgid instead of being
+          # purged by it. Requires the puppet/podman module and its `podman`
+          # class to be declared on the node (e.g. via bastionvault).
+          podman::subuid { $user:
+            subuid => $_subid_start,
+            count  => $_subid_count,
+          }
+          podman::subgid { $user:
+            subgid => $_subid_start,
+            count  => $_subid_count,
+          }
+          Podman::Subuid[$user] -> Exec['ferrogate-enable-linger']
+          Podman::Subgid[$user] -> Exec['ferrogate-enable-linger']
+        }
+        default: {
+          # 'none': subids managed elsewhere; do nothing here.
+        }
       }
     }
     if $ferrogate::_manage_runtime {
