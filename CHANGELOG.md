@@ -4,6 +4,25 @@ All notable changes to this module are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this module
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.4] - 2026-06-02
+
+### Changed
+- `mia_enable` now defaults to **`false`**. The published FerroGate image is
+  CMIS-only: it ships the `cmis` server and the `ferrogate` CLI but no `mia`
+  binary, and its entrypoint expects the MIA host agent to be installed on each
+  machine from its OS package, not run as a container. With the old default of
+  `true`, the MIA Quadlet unit failed on every run (`exec: mia: not found`,
+  exit 127). Set `mia_enable => true` only against an image that bundles `mia`.
+
+### Fixed
+- The host operator CLI wrapper (`/usr/local/bin/ferrogate`) and its sudoers
+  drop-in are no longer skipped when a container fails to start. `ferrogate::cli`
+  was ordered after the entire `ferrogate::service` class, so any service-start
+  failure (e.g. the unsupported MIA container above) skipped the CLI resources,
+  leaving `ferrogate: command not found` on the host even though CMIS was
+  running. The CLI is a static host script, so it is now ordered after
+  `ferrogate::install` (which creates the service user it sudo's to) instead.
+
 ## [0.3.3] - 2026-06-02
 
 ### Fixed

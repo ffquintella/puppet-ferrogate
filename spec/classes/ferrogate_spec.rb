@@ -12,7 +12,7 @@ BASE_FACTS = {
 }.freeze
 
 describe 'ferrogate' do
-  context 'with podman defaults (both services)' do
+  context 'with podman defaults (CMIS only; MIA off)' do
     let(:facts) { BASE_FACTS }
 
     it { is_expected.to compile }
@@ -97,9 +97,9 @@ describe 'ferrogate' do
       )
     end
 
-    it 'renders the cmis and mia env files' do
+    it 'renders the cmis env file but not mia (MIA off by default)' do
       is_expected.to contain_file('/srv/application-config/ferrogate/cmis.env')
-      is_expected.to contain_file('/srv/application-config/ferrogate/mia.env')
+      is_expected.not_to contain_file('/srv/application-config/ferrogate/mia.env')
     end
 
     it 'declares a cmis instance that publishes the gRPC port and mounts the volumes' do
@@ -114,11 +114,8 @@ describe 'ferrogate' do
       )
     end
 
-    it 'declares a mia instance with the TPM device' do
-      is_expected.to contain_ferrogate__instance('mia').with(
-        command: 'mia',
-        devices: ['/dev/tpmrm0'],
-      )
+    it 'does not declare a mia instance by default (CMIS-only image)' do
+      is_expected.not_to contain_ferrogate__instance('mia')
     end
 
     it 'configures SELinux booleans and file contexts' do
@@ -133,6 +130,10 @@ describe 'ferrogate' do
         group: 'root',
         mode:  '0755',
       )
+    end
+
+    it 'orders the CLI after install (so a container-start failure cannot skip it)' do
+      is_expected.to contain_class('ferrogate::cli').that_requires('Class[ferrogate::install]')
     end
 
     it 'execs into the cmis container as the rootless service user' do
@@ -217,6 +218,24 @@ describe 'ferrogate' do
     it 'composes the fully-qualified image reference' do
       is_expected.to contain_exec('ferrogate-pull-image').with(
         command: 'podman pull registry.example.com/fgv/ferrogate:1.4.0',
+      )
+    end
+  end
+
+  context 'with mia explicitly enabled' do
+    let(:facts) { BASE_FACTS }
+    let(:params) { { mia_enable: true } }
+
+    it { is_expected.to compile }
+
+    it 'renders the mia env file' do
+      is_expected.to contain_file('/srv/application-config/ferrogate/mia.env')
+    end
+
+    it 'declares a mia instance with the TPM device' do
+      is_expected.to contain_ferrogate__instance('mia').with(
+        command: 'mia',
+        devices: ['/dev/tpmrm0'],
       )
     end
   end
