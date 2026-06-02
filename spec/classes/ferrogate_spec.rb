@@ -49,10 +49,11 @@ describe 'ferrogate' do
       is_expected.to contain_exec('ferrogate-pull-image').that_requires('Exec[ferrogate-podman-migrate]')
     end
 
-    it 'pulls the image rootless as the service user' do
+    it 'pulls the image rootless as the service user from its own home dir' do
       is_expected.to contain_exec('ferrogate-pull-image').with(
         command: 'podman pull ferrogate:latest',
         user:    'ferrogate',
+        cwd:     '/home/ferrogate',
       )
     end
 

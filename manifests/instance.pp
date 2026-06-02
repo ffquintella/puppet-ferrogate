@@ -90,6 +90,7 @@ define ferrogate::instance (
       command     => 'systemctl --user daemon-reload',
       path        => ['/usr/bin', '/bin'],
       user        => $user,
+      cwd         => "/home/${user}",
       environment => [$_sysd, "HOME=/home/${user}"],
       refreshonly => true,
     }
@@ -99,6 +100,7 @@ define ferrogate::instance (
         command     => "systemctl --user enable --now ${svc}.service",
         path        => ['/usr/bin', '/bin'],
         user        => $user,
+        cwd         => "/home/${user}",
         environment => [$_sysd, "HOME=/home/${user}"],
         unless      => "systemctl --user is-active --quiet ${svc}.service",
         require     => Exec["ferrogate-user-daemon-reload-${command}"],
@@ -109,6 +111,7 @@ define ferrogate::instance (
         command     => "systemctl --user disable --now ${svc}.service",
         path        => ['/usr/bin', '/bin'],
         user        => $user,
+        cwd         => "/home/${user}",
         environment => [$_sysd, "HOME=/home/${user}"],
         onlyif      => "systemctl --user is-active --quiet ${svc}.service",
         require     => Exec["ferrogate-user-daemon-reload-${command}"],

@@ -4,6 +4,16 @@ All notable changes to this module are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this module
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.6] - 2026-06-02
+
+### Fixed
+- Rootless podman / `systemctl --user` execs run as the service user now set
+  `cwd` to the user's home directory. Previously they inherited the Puppet
+  agent's working directory (typically `/root`, mode 0700), which the
+  unprivileged service user cannot access — causing podman/systemd to error on
+  `getcwd`/`chdir`. Applies to the image pull, `podman system migrate`, and the
+  per-instance `systemctl --user` daemon-reload/enable/disable execs.
+
 ## [0.2.5] - 2026-06-02
 
 ### Fixed
