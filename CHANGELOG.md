@@ -4,6 +4,45 @@ All notable changes to this module are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this module
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+<!-- TODO(F01-cli): cut this as a release and set <MIN_CLI_VERSION> once the
+     ferrogate CLI gains F01 hybrid-PQC transport support. -->
+
+### Changed
+- Documented that the in-container operator CLI now reaches a TLS-on CMIS over
+  the F01 hybrid-PQC transport, auto-deriving the SPKI pin from the mounted
+  server certificate (`/etc/ferrogate/tls/cmis.crt`). No module behavior changed
+  — the wrapper already uses `https://` and mounts the cert. Requires a
+  `ferrogate` CLI ≥ `<MIN_CLI_VERSION>`; older plaintext-only CLIs still need
+  `cmis_tls_enable => false`.
+
+## [0.3.5] - 2026-06-03
+
+### Added
+- **Hybrid-PQC TLS for the CMIS listener (FerroGate F01).** The module now
+  configures, and optionally creates, the TLS material that CMIS terminates
+  (TLS 1.3, `X25519MLKEM768`-only; trust is by SPKI pin, not a CA chain).
+  - New `cmis_tls_enable` parameter (**default `true`**). When on, the module
+    sets `CMIS_TLS_CERT` / `CMIS_TLS_KEY` for the container and ensures a
+    certificate exists; when off, CMIS runs its plaintext bring-up server.
+  - Supply your own cert with `cmis_tls_cert` / `cmis_tls_key` (PEM strings), or
+    let the module generate a self-signed P-384 certificate (`cmis_tls_manage_cert`,
+    default `true`; `cmis_tls_cert_cn`, `cmis_tls_cert_days`). Requires `openssl`
+    on the host for generation.
+  - The cert/key live in a new `tls/` directory under the config root, owned by
+    the container-mapped id and bind-mounted into the CMIS container at
+    `/etc/ferrogate/tls`. A new private class `ferrogate::tls` manages them.
+  - The **SHA-384 SPKI pin** MIA clients pin to authenticate CMIS is computed
+    and written to `<config_dir>/cmis.spki-pin.txt` for operators.
+
+### Changed
+- The operator CLI wrapper now points at an `https://` loopback endpoint when
+  TLS is enabled (the default). **Note:** the in-container `ferrogate` CLI is a
+  plaintext client today; the `https` endpoint works only against a CLI build
+  with F01 hybrid-PQC transport support. Set `cmis_tls_enable => false` for the
+  plaintext path until that CLI ships.
+
 ## [0.3.4] - 2026-06-02
 
 ### Changed

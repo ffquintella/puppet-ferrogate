@@ -60,6 +60,16 @@ class ferrogate::config {
 
   # --- Per-instance environment files ---------------------------------------
   if $ferrogate::_cmis_enable {
+    # In-container TLS paths, set only when CMIS terminates TLS (empty strings
+    # leave CMIS_TLS_CERT / CMIS_TLS_KEY unset ⇒ plaintext bring-up server).
+    if $ferrogate::_cmis_tls_enable {
+      $tls_cert = $ferrogate::_tls_container_cert
+      $tls_key  = $ferrogate::_tls_container_key
+    } else {
+      $tls_cert = ''
+      $tls_key  = ''
+    }
+
     file { "${config_dir}/cmis.env":
       ensure  => file,
       owner   => $user,
@@ -68,6 +78,8 @@ class ferrogate::config {
       content => epp('ferrogate/cmis.env.epp', {
           'rust_log'    => $ferrogate::_rust_log,
           'cmis_listen' => $ferrogate::_cmis_listen,
+          'tls_cert'    => $tls_cert,
+          'tls_key'     => $tls_key,
           'extra_env'   => $ferrogate::_extra_env,
       }),
       require => File[$config_dir],

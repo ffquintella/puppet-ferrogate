@@ -2,6 +2,7 @@
       Integer[0] $uid,
       String[1]  $container,
       Integer[0] $container_port,
+      String[1]  $scheme,
 | -%>
 #!/bin/sh
 # Managed by Puppet — ferrogate module. Do not edit by hand.
@@ -20,7 +21,7 @@ CONTAINER='<%= $container %>'
 # non-default cmis_container_port still resolves; an operator-supplied
 # --endpoint later on the command line overrides this (the CLI honours the
 # last --endpoint it sees).
-ENDPOINT='http://127.0.0.1:<%= $container_port %>'
+ENDPOINT='<%= $scheme %>://127.0.0.1:<%= $container_port %>'
 
 # Allocate a pseudo-TTY only when stdin AND stdout are terminals (interactive
 # use). Both forms (`-i` and `-i -t`) are pre-authorised in the sudoers drop-in.

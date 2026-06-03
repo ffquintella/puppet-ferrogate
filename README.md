@@ -80,13 +80,64 @@ class { 'ferrogate':
 
 All parameters can be driven from Hiera.
 
+### Transport TLS (hybrid-PQC)
+
+CMIS terminates **hybrid-PQC TLS** (TLS 1.3, `X25519MLKEM768`-only) on its
+listen port. This is **on by default** (`cmis_tls_enable => true`): the module
+ensures a certificate exists, sets `CMIS_TLS_CERT` / `CMIS_TLS_KEY` for the
+container, and bind-mounts the cert/key into it. FerroGate authenticates the
+server by **SPKI pin**, not a CA chain, so a self-signed certificate is fine.
+
+With no certificate supplied, the module generates a self-signed P-384 cert
+(requires `openssl` on the host):
+
+```puppet
+include ferrogate   # TLS on; self-signed cert generated if none supplied
+```
+
+Supply your own PKI-issued certificate instead (e.g. from Hiera):
+
+```puppet
+class { 'ferrogate':
+  cmis_tls_cert => file('/path/to/cmis.crt'),  # PEM chain, end-entity first
+  cmis_tls_key  => file('/path/to/cmis.key'),  # matching PEM private key
+}
+```
+
+The module writes the certificate's **SHA-384 SPKI pin** to
+`<config_dir>/cmis.spki-pin.txt` (e.g.
+`/srv/application-config/ferrogate/cmis.spki-pin.txt`) — that hex string is what
+MIA clients pin to authenticate this CMIS node.
+
+Disable TLS for a local dev / bring-up node (plaintext gRPC — never in
+production):
+
+```puppet
+class { 'ferrogate':
+  cmis_tls_enable => false,
+}
+```
+
+<!-- TODO(F01-cli): set <MIN_CLI_VERSION> below once the ferrogate CLI F01 release ships. -->
+> **Operator CLI over TLS:** with TLS on, the host wrapper targets an `https://`
+> loopback endpoint. The in-container `ferrogate` CLI dials it over the F01
+> hybrid-PQC transport and **auto-derives the SPKI pin from the mounted server
+> certificate** (`/etc/ferrogate/tls/cmis.crt`), so it works out of the box — no
+> extra trust configuration. This requires a `ferrogate` CLI with F01 support
+> (≥ `<MIN_CLI_VERSION>`); older, plaintext-only CLIs cannot talk to a TLS node —
+> run those operator commands against a node with `cmis_tls_enable => false`, or
+> use a TLS-aware client.
+
 ## Operator CLI
 
 When CMIS is enabled the module installs a host wrapper at
 `/usr/local/bin/ferrogate`. The `ferrogate` operator CLI binary ships *inside*
 the server image; the wrapper re-execs into the running `ferrogate-cmis`
 container so the CLI's gRPC client reaches CMIS over the container's own
-loopback — no published host port or TLS trust anchor is needed.
+loopback — no published host port is needed. The wrapper's endpoint scheme
+follows `cmis_tls_enable` (`https://` when TLS is on); over TLS the CLI pins the
+mounted server certificate automatically (requires a CLI with F01 support — see
+[Transport TLS](#transport-tls-hybrid-pqc)).
 
 ```console
 $ ferrogate status
@@ -121,6 +172,11 @@ Key parameters (see the puppet-strings docs in
 | `cmis_listen`         | `'0.0.0.0:8443'` | `CMIS_LISTEN` inside the container.                      |
 | `cmis_port`           | `8443`           | Host port published for CMIS.                            |
 | `cmis_container_port` | `8443`           | Container port CMIS listens on (match `cmis_listen`).    |
+| `cmis_tls_enable`     | `true`           | Terminate hybrid-PQC TLS on CMIS (else plaintext bring-up). |
+| `cmis_tls_cert` / `cmis_tls_key` | `undef`| Supplied PEM cert chain + key (else self-signed is generated). |
+| `cmis_tls_manage_cert`| `true`           | Generate a self-signed P-384 cert when none is supplied. |
+| `cmis_tls_cert_cn`    | FQDN fact        | Subject CN for the generated cert (trust is by pin, not name). |
+| `cmis_tls_cert_days`  | `3650`           | Validity (days) of the generated self-signed cert.       |
 | `mia_enable`          | `false`          | Deploy MIA as a container (standard image is CMIS-only). |
 | `mia_tpm_device`      | `'/dev/tpmrm0'`  | Host TPM device handed to MIA.                           |
 | `mia_skip_hardening`  | `true`           | Set `FERROGATE_SKIP_HARDENING=1` (containers can't meet the full profile). |
@@ -143,6 +199,14 @@ Key parameters (see the puppet-strings docs in
   `false`; enabling it against the standard image makes the MIA unit fail
   (`exec: mia: not found`). Only set `mia_enable => true` against an image that
   actually bundles the `mia` binary.
+- **CMIS TLS is on by default.** With TLS on, the host CLI wrapper targets an
+  `https://` loopback; the in-container `ferrogate` CLI pins the mounted server
+  cert automatically, which requires a CLI with F01 hybrid-PQC transport support
+  (≥ `<MIN_CLI_VERSION>`). Older, plaintext-only CLIs cannot talk to a TLS node —
+  use `cmis_tls_enable => false` for those. Self-signed certificate generation
+  requires `openssl` on the host; the module does not manage the `openssl`
+  package (to avoid colliding with other modules on shared nodes). See
+  [Transport TLS](#transport-tls-hybrid-pqc).
 - **MIA in a container** also cannot satisfy FerroGate's host-hardening profile
   (enforced IMA, seccomp install, privilege drop). `mia_skip_hardening` defaults
   to `true`; for a production MIA host that runs the full profile, set it to

@@ -110,6 +110,7 @@ describe 'ferrogate' do
         volumes:  [
           '/srv/application-logs/ferrogate:/opt/ferrogate/logs',
           '/srv/application-data/ferrogate/audit:/var/lib/ferrogate/audit',
+          '/srv/application-config/ferrogate/tls:/etc/ferrogate/tls', # TLS on by default
         ],
       )
     end
@@ -141,7 +142,7 @@ describe 'ferrogate' do
         .with_content(%r{sudo -n -u ferrogate})
         .with_content(%r{XDG_RUNTIME_DIR=/run/user/10001})
         .with_content(%r{/usr/bin/podman exec \$TTY_ARGS "\$CONTAINER"})
-        .with_content(%r{ENDPOINT='http://127\.0\.0\.1:8443'})
+        .with_content(%r{ENDPOINT='https://127\.0\.0\.1:8443'}) # TLS on by default
     end
 
     it 'authorises the ferrogate group to run the CLI via sudoers' do
@@ -152,6 +153,139 @@ describe 'ferrogate' do
       is_expected.to contain_file('/etc/sudoers.d/ferrogate-cli')
         .with_content(%r{%ferrogate ALL=\(ferrogate\) NOPASSWD:})
         .with_content(%r{/usr/bin/podman exec -i ferrogate-cmis ferrogate \*})
+    end
+  end
+
+  context 'CMIS TLS (on by default)' do
+    let(:facts) { BASE_FACTS }
+
+    it { is_expected.to compile }
+
+    it 'declares the tls class' do
+      is_expected.to contain_class('ferrogate::tls')
+    end
+
+    it 'creates the bind-mounted tls directory owned by the container-mapped id' do
+      is_expected.to contain_file('/srv/application-config/ferrogate/tls').with(
+        ensure: 'directory',
+        owner:  655_435_536,
+        group:  655_435_536,
+        mode:   '0750',
+      )
+    end
+
+    it 'generates a self-signed P-384 certificate when none is supplied' do
+      is_expected.to contain_exec('ferrogate-tls-generate').with(
+        creates: '/srv/application-config/ferrogate/tls/cmis.crt',
+      )
+      is_expected.to contain_exec('ferrogate-tls-generate')
+        .with_command(%r{openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-384})
+        .with_command(%r{-keyout /srv/application-config/ferrogate/tls/cmis\.key})
+        .with_command(%r{-out /srv/application-config/ferrogate/tls/cmis\.crt})
+    end
+
+    it 'manages the cert and key files owned by the container-mapped id (no content when generated)' do
+      is_expected.to contain_file('/srv/application-config/ferrogate/tls/cmis.crt').with(
+        owner: 655_435_536,
+        mode:  '0640',
+      )
+      is_expected.to contain_file('/srv/application-config/ferrogate/tls/cmis.key').with(
+        owner: 655_435_536,
+        mode:  '0640',
+      )
+    end
+
+    it 'computes and publishes the SPKI pin' do
+      is_expected.to contain_exec('ferrogate-tls-spki-pin')
+        .with_command(%r{openssl x509 -in /srv/application-config/ferrogate/tls/cmis\.crt -pubkey -noout})
+        .with_command(%r{openssl dgst -sha384})
+      is_expected.to contain_file('/srv/application-config/ferrogate/cmis.spki-pin.txt').with(
+        owner: 'ferrogate',
+        mode:  '0644',
+      )
+    end
+
+    # NOTE: the cmis.env CMIS_TLS_CERT/_KEY lines are rendered by an EPP template
+    # whose `.each` loop the Artichoke test evaluator cannot render faithfully
+    # (it emits `undef=undef`), so the env *content* is not asserted here. The
+    # paths fed into the template are exercised via the bind-mount below.
+
+    it 'bind-mounts the tls directory into the cmis container' do
+      is_expected.to contain_ferrogate__instance('cmis').with(
+        volumes: [
+          '/srv/application-logs/ferrogate:/opt/ferrogate/logs',
+          '/srv/application-data/ferrogate/audit:/var/lib/ferrogate/audit',
+          '/srv/application-config/ferrogate/tls:/etc/ferrogate/tls',
+        ],
+      )
+    end
+
+    it 'points the operator CLI at an https loopback endpoint' do
+      is_expected.to contain_file('/usr/local/bin/ferrogate')
+        .with_content(%r{ENDPOINT='https://127\.0\.0\.1:8443'})
+    end
+  end
+
+  context 'CMIS TLS with a supplied certificate' do
+    let(:facts) { BASE_FACTS }
+    let(:params) do
+      {
+        cmis_tls_cert: "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n",
+        cmis_tls_key:  "-----BEGIN PRIVATE KEY-----\nMIGH\n-----END PRIVATE KEY-----\n",
+      }
+    end
+
+    it { is_expected.to compile }
+
+    it 'does not generate a certificate' do
+      is_expected.not_to contain_exec('ferrogate-tls-generate')
+    end
+
+    it 'writes the supplied PEM cert and key verbatim' do
+      is_expected.to contain_file('/srv/application-config/ferrogate/tls/cmis.crt')
+        .with_content(%r{BEGIN CERTIFICATE})
+      is_expected.to contain_file('/srv/application-config/ferrogate/tls/cmis.key')
+        .with_content(%r{BEGIN PRIVATE KEY})
+    end
+
+    it 'still computes the SPKI pin from the supplied cert' do
+      is_expected.to contain_exec('ferrogate-tls-spki-pin')
+    end
+  end
+
+  context 'CMIS TLS disabled (plaintext bring-up)' do
+    let(:facts) { BASE_FACTS }
+    let(:params) { { cmis_tls_enable: false } }
+
+    it { is_expected.to compile }
+
+    it 'does not declare the tls class or any tls material' do
+      is_expected.not_to contain_class('ferrogate::tls')
+      is_expected.not_to contain_file('/srv/application-config/ferrogate/tls')
+      is_expected.not_to contain_exec('ferrogate-tls-generate')
+    end
+
+    it 'does not mount a tls volume into the cmis container' do
+      is_expected.to contain_ferrogate__instance('cmis').with(
+        volumes: [
+          '/srv/application-logs/ferrogate:/opt/ferrogate/logs',
+          '/srv/application-data/ferrogate/audit:/var/lib/ferrogate/audit',
+        ],
+      )
+    end
+
+    it 'points the operator CLI back at an http loopback endpoint' do
+      is_expected.to contain_file('/usr/local/bin/ferrogate')
+        .with_content(%r{ENDPOINT='http://127\.0\.0\.1:8443'})
+    end
+  end
+
+  context 'CMIS TLS enabled with no cert and generation disabled' do
+    let(:facts) { BASE_FACTS }
+    let(:params) { { cmis_tls_manage_cert: false } }
+
+    it 'fails compilation with a clear error' do
+      is_expected.to compile.and_raise_error(%r{no certificate was supplied})
     end
   end
 

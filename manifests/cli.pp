@@ -35,6 +35,14 @@ class ferrogate::cli {
   $runtime        = $ferrogate::_runtime
   $container_port = $ferrogate::_cmis_container_port
 
+  # CMIS speaks TLS on its listen port when tls is enabled, so the loopback
+  # endpoint scheme must match. (Requires a CLI build with F01 TLS support — see
+  # the cmis_tls_enable caveat in the class docs.)
+  $scheme = $ferrogate::_cmis_tls_enable ? {
+    true    => 'https',
+    default => 'http',
+  }
+
   # The cmis instance is named `ferrogate-cmis` (ferrogate::instance derives the
   # container/unit name as "ferrogate-${command}").
   $container = 'ferrogate-cmis'
@@ -45,6 +53,7 @@ class ferrogate::cli {
         'uid'            => $uid,
         'container'      => $container,
         'container_port' => $container_port,
+        'scheme'         => $scheme,
     })
     $sudoers_content = epp('ferrogate/ferrogate-cli-sudoers-podman.epp', {
         'user'      => $user,
@@ -56,6 +65,7 @@ class ferrogate::cli {
     $wrapper_content = epp('ferrogate/ferrogate-cli-docker.sh.epp', {
         'container'      => $container,
         'container_port' => $container_port,
+        'scheme'         => $scheme,
     })
     $sudoers_content = epp('ferrogate/ferrogate-cli-sudoers-docker.epp', {
         'group'     => $group,

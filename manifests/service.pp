@@ -13,14 +13,26 @@ class ferrogate::service {
   $config_dir = $ferrogate::config_dir
 
   # CMIS: gRPC server. Mounts the log + audit (WORM) volumes, publishes 8443.
+  # When TLS terminates here, also bind-mount the cert/key directory that
+  # ferrogate::tls populated (read by the container via CMIS_TLS_CERT/_KEY).
   if $ferrogate::_cmis_enable {
+    if $ferrogate::_cmis_tls_enable {
+      $_cmis_volumes = [
+        "${logs_dir}:/opt/ferrogate/logs",
+        "${audit_dir}:/var/lib/ferrogate/audit",
+        "${ferrogate::_tls_dir}:${ferrogate::_tls_container_dir}",
+      ]
+    } else {
+      $_cmis_volumes = [
+        "${logs_dir}:/opt/ferrogate/logs",
+        "${audit_dir}:/var/lib/ferrogate/audit",
+      ]
+    }
+
     ferrogate::instance { 'cmis':
       command  => 'cmis',
       env_file => "${config_dir}/cmis.env",
-      volumes  => [
-        "${logs_dir}:/opt/ferrogate/logs",
-        "${audit_dir}:/var/lib/ferrogate/audit",
-      ],
+      volumes  => $_cmis_volumes,
       ports    => ["${ferrogate::_cmis_port}:${ferrogate::_cmis_container_port}"],
       devices  => [],
     }

@@ -85,6 +85,42 @@
 #   Host port published for CMIS (mapped to `cmis_container_port`).
 # @param cmis_container_port
 #   Container-side port CMIS listens on. Must match the port in `cmis_listen`.
+# @param cmis_tls_enable
+#   Terminate **hybrid-PQC TLS** (TLS 1.3, `X25519MLKEM768`-only) on the CMIS
+#   listener. When `true` (the default) the module sets `CMIS_TLS_CERT` /
+#   `CMIS_TLS_KEY` for the container and ensures a certificate exists (supplied
+#   or generated — see `cmis_tls_cert`/`cmis_tls_manage_cert`). When `false`
+#   CMIS runs the **plaintext bring-up server** — dev only; never in production.
+#   FerroGate authenticates the server by **SPKI pin**, not a CA chain, so a
+#   self-signed certificate is fine; the module also publishes the pin (see
+#   below) for configuring MIA clients.
+#
+#   **Caveat:** the in-container operator CLI (`/usr/local/bin/ferrogate`) is a
+#   plaintext gRPC client today. With TLS on, the wrapper points it at an
+#   `https://` loopback endpoint; it works only against a `ferrogate` CLI build
+#   that speaks the F01 hybrid-PQC transport. On an older CLI, run operator
+#   commands against a node with TLS off, or use a TLS-aware client.
+# @param cmis_tls_cert
+#   PEM certificate chain for the CMIS listener (end-entity first, then any
+#   intermediates), as a string. When set, `cmis_tls_key` must also be set and
+#   the pair is written to disk verbatim (no generation). When `undef` and
+#   `cmis_tls_manage_cert` is `true`, a self-signed certificate is generated.
+# @param cmis_tls_key
+#   PEM private key (PKCS#8, PKCS#1 or SEC1) matching `cmis_tls_cert`, as a
+#   string. Set both `cmis_tls_cert` and `cmis_tls_key` together, or neither.
+# @param cmis_tls_manage_cert
+#   When TLS is enabled and no certificate is supplied, generate a self-signed
+#   P-384 certificate with OpenSSL on the node (idempotent — only created if the
+#   cert file is absent). Set `false` to require an operator-supplied cert and
+#   fail the run if none is present. Requires `openssl` on the host. Ignored
+#   when `cmis_tls_cert`/`cmis_tls_key` are supplied.
+# @param cmis_tls_cert_cn
+#   Common Name (subject) for the generated self-signed certificate. Defaults to
+#   the node FQDN fact, falling back to `cmis.ferrogate.internal`. The hostname
+#   is irrelevant to trust (SPKI pinning) — it is used only for SNI/routing.
+# @param cmis_tls_cert_days
+#   Validity in days for the generated self-signed certificate. Ignored for a
+#   supplied certificate.
 # @param mia_enable
 #   Deploy the MIA (Machine Identity Agent) as a container. **Defaults to
 #   `false`**: the standard FerroGate image is CMIS-only — it ships the `cmis`
@@ -139,6 +175,12 @@ class ferrogate (
   String[1]                        $cmis_listen        = '0.0.0.0:8443',
   Stdlib::Port                     $cmis_port          = 8443,
   Stdlib::Port                     $cmis_container_port = 8443,
+  Boolean                          $cmis_tls_enable    = true,
+  Optional[String[1]]              $cmis_tls_cert      = undef,
+  Optional[String[1]]              $cmis_tls_key       = undef,
+  Boolean                          $cmis_tls_manage_cert = true,
+  Optional[String[1]]              $cmis_tls_cert_cn   = undef,
+  Integer[1]                       $cmis_tls_cert_days = 3650,
   Boolean                          $mia_enable         = false,
   Stdlib::Absolutepath             $mia_tpm_device     = '/dev/tpmrm0',
   Boolean                          $mia_skip_hardening = true,
@@ -151,6 +193,26 @@ class ferrogate (
   }
   if !$_runtime {
     fail('ferrogate: no container runtime found; install podman or docker, or set $runtime explicitly.')
+  }
+
+  # --- Validate the CMIS TLS configuration ----------------------------------
+  if $cmis_enable and $cmis_tls_enable {
+    if ($cmis_tls_cert and !$cmis_tls_key) or ($cmis_tls_key and !$cmis_tls_cert) {
+      fail('ferrogate: set both cmis_tls_cert and cmis_tls_key together, or neither.')
+    }
+    if !$cmis_tls_cert and !$cmis_tls_key and !$cmis_tls_manage_cert {
+      fail('ferrogate: cmis_tls_enable is true but no certificate was supplied and cmis_tls_manage_cert is false.')
+    }
+  }
+
+  # Resolve the subject CN for a generated self-signed certificate. Trust is by
+  # SPKI pin, so the name only matters for SNI/routing — default to the FQDN.
+  if $cmis_tls_cert_cn {
+    $_cmis_tls_cert_cn = $cmis_tls_cert_cn
+  } elsif $facts['networking'] and $facts['networking']['fqdn'] {
+    $_cmis_tls_cert_cn = $facts['networking']['fqdn']
+  } else {
+    $_cmis_tls_cert_cn = 'cmis.ferrogate.internal'
   }
 
   # --- Resolve the image reference ------------------------------------------
@@ -193,6 +255,22 @@ class ferrogate (
   $_cmis_listen        = $cmis_listen
   $_cmis_port          = $cmis_port
   $_cmis_container_port = $cmis_container_port
+  $_cmis_tls_enable      = $cmis_tls_enable
+  $_cmis_tls_cert        = $cmis_tls_cert
+  $_cmis_tls_key         = $cmis_tls_key
+  $_cmis_tls_manage_cert = $cmis_tls_manage_cert
+  $_cmis_tls_cert_days   = $cmis_tls_cert_days
+  # On-disk (host) and in-container paths for the TLS material. The cert/key
+  # directory is bind-mounted into the CMIS container; the SPKI pin file is a
+  # host-only convenience kept under the login-user-owned config root so
+  # operators (and root) can read it to configure MIA pinning.
+  $_tls_dir            = "${config_dir}/tls"
+  $_tls_cert_file      = "${config_dir}/tls/cmis.crt"
+  $_tls_key_file       = "${config_dir}/tls/cmis.key"
+  $_tls_pin_file       = "${config_dir}/cmis.spki-pin.txt"
+  $_tls_container_dir  = '/etc/ferrogate/tls'
+  $_tls_container_cert = '/etc/ferrogate/tls/cmis.crt'
+  $_tls_container_key  = '/etc/ferrogate/tls/cmis.key'
   $_mia_enable         = $mia_enable
   $_mia_tpm_device     = $mia_tpm_device
   $_mia_skip_hardening = $mia_skip_hardening
@@ -216,6 +294,13 @@ class ferrogate (
   contain ferrogate::selinux
   contain ferrogate::service
 
+  # CMIS TLS material (cert/key placement or generation, plus the SPKI pin).
+  # Only relevant when CMIS terminates TLS on this node.
+  if $cmis_enable and $cmis_tls_enable {
+    class { 'ferrogate::tls': }
+    contain ferrogate::tls
+  }
+
   # Host-side operator CLI wrapper. Only useful when CMIS is running, since the
   # `ferrogate` CLI is a gRPC client of CMIS.
   if $cmis_enable {
@@ -233,6 +318,15 @@ class ferrogate (
   -> Class['ferrogate::config']
   -> Class['ferrogate::selinux']
   -> Class['ferrogate::service']
+
+  # The CMIS instance bind-mounts the TLS directory, so the cert/key must be in
+  # place before the service starts. Slot the tls class between config (which
+  # creates the config root it writes into) and service.
+  if $cmis_enable and $cmis_tls_enable {
+    Class['ferrogate::config']
+    -> Class['ferrogate::tls']
+    -> Class['ferrogate::service']
+  }
 
   # The CLI wrapper is a static host script; writing it does not require the
   # container to be running. Order it after `install` (which creates the service
