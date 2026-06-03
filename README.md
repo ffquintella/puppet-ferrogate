@@ -118,15 +118,14 @@ class { 'ferrogate':
 }
 ```
 
-<!-- TODO(F01-cli): set <MIN_CLI_VERSION> below once the ferrogate CLI F01 release ships. -->
 > **Operator CLI over TLS:** with TLS on, the host wrapper targets an `https://`
 > loopback endpoint. The in-container `ferrogate` CLI dials it over the F01
 > hybrid-PQC transport and **auto-derives the SPKI pin from the mounted server
 > certificate** (`/etc/ferrogate/tls/cmis.crt`), so it works out of the box — no
 > extra trust configuration. This requires a `ferrogate` CLI with F01 support
-> (≥ `<MIN_CLI_VERSION>`); older, plaintext-only CLIs cannot talk to a TLS node —
-> run those operator commands against a node with `cmis_tls_enable => false`, or
-> use a TLS-aware client.
+> (≥ **0.15.0**); older, plaintext-only CLIs cannot talk to a TLS node — run
+> those operator commands against a node with `cmis_tls_enable => false`, or use
+> a TLS-aware client.
 
 ## Operator CLI
 
@@ -202,7 +201,7 @@ Key parameters (see the puppet-strings docs in
 - **CMIS TLS is on by default.** With TLS on, the host CLI wrapper targets an
   `https://` loopback; the in-container `ferrogate` CLI pins the mounted server
   cert automatically, which requires a CLI with F01 hybrid-PQC transport support
-  (≥ `<MIN_CLI_VERSION>`). Older, plaintext-only CLIs cannot talk to a TLS node —
+  (≥ **0.15.0**). Older, plaintext-only CLIs cannot talk to a TLS node —
   use `cmis_tls_enable => false` for those. Self-signed certificate generation
   requires `openssl` on the host; the module does not manage the `openssl`
   package (to avoid colliding with other modules on shared nodes). See

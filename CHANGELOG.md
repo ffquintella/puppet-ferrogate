@@ -4,18 +4,16 @@ All notable changes to this module are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this module
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
-<!-- TODO(F01-cli): cut this as a release and set <MIN_CLI_VERSION> once the
-     ferrogate CLI gains F01 hybrid-PQC transport support. -->
+## [0.3.6] - 2026-06-03
 
 ### Changed
-- Documented that the in-container operator CLI now reaches a TLS-on CMIS over
-  the F01 hybrid-PQC transport, auto-deriving the SPKI pin from the mounted
-  server certificate (`/etc/ferrogate/tls/cmis.crt`). No module behavior changed
-  — the wrapper already uses `https://` and mounts the cert. Requires a
-  `ferrogate` CLI ≥ `<MIN_CLI_VERSION>`; older plaintext-only CLIs still need
-  `cmis_tls_enable => false`.
+- The in-container operator CLI now reaches a TLS-on CMIS over the F01
+  hybrid-PQC transport, auto-deriving the SPKI pin from the mounted server
+  certificate (`/etc/ferrogate/tls/cmis.crt`). No module behavior changed — the
+  wrapper already uses `https://` and mounts the cert at the path the CLI
+  defaults to. This capability requires the **ferrogate CLI ≥ 0.15.0** (the F01
+  CLI release); older plaintext-only CLIs still need `cmis_tls_enable => false`.
+  README updated to drop the earlier "CLI is plaintext-only" caveat.
 
 ## [0.3.5] - 2026-06-03
 
