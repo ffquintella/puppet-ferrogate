@@ -276,12 +276,13 @@ class ferrogate (
   $_mia_skip_hardening = $mia_skip_hardening
   $_extra_env          = $extra_env
 
-  # Re-declare baseapp so the /srv roots are owned by the FerroGate user.
-  class { 'baseapp':
-    owner => $user,
-    group => $group,
-    mode  => '0750',
-  }
+  # The shared /srv/application-* roots stay root:root 0755 (baseapp defaults)
+  # so every app user on the node can traverse to its own subdirectory. The
+  # FerroGate-owned tree lives in the per-app subdirs that ferrogate::config
+  # creates ($user-owned, 0750). Overriding the roots to ferrogate:ferrogate
+  # 0750 here locked other apps (e.g. bastionvault) out of their own subdirs,
+  # since the roots then had no traverse bit for "other".
+  include baseapp
 
   class { 'ferrogate::install': }
   class { 'ferrogate::config': }
@@ -308,13 +309,12 @@ class ferrogate (
     contain ferrogate::cli
   }
 
-  # ferrogate::install must run *before* baseapp: baseapp chowns the
-  # /srv/application-* roots to the ferrogate user/group, so it auto-requires
-  # User/Group[ferrogate] — which install creates. Ordering baseapp first would
-  # form a dependency cycle (baseapp's File -> needs install's Group -> install
-  # ordered after baseapp).
-  Class['ferrogate::install']
-  -> Class['baseapp']
+  # baseapp now owns the shared /srv roots as root:root and no longer depends
+  # on the ferrogate user, so it can run first. ferrogate::config creates the
+  # per-app subdirs beneath those roots, so it must come after both baseapp
+  # (roots exist) and install (ferrogate user exists).
+  Class['baseapp']
+  -> Class['ferrogate::install']
   -> Class['ferrogate::config']
   -> Class['ferrogate::selinux']
   -> Class['ferrogate::service']
