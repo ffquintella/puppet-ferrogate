@@ -4,6 +4,49 @@ All notable changes to this module are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this module
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-06-08
+
+### Added
+- **`ferrogate::mia` — install and configure the MIA host agent from its OS
+  package.** A new standalone class that deploys the Machine Identity Agent the
+  way FerroGate ships it: as the native `ferrogate-mia` package (static
+  `/usr/bin/mia` binary + `mia` systemd unit), *not* in a container. It can be
+  declared on any host on its own, with no dependency on the `ferrogate` server
+  class, `baseapp`, a container runtime, or the dedicated service user.
+  - Installs the package, manages `/etc/ferrogate`, renders the systemd
+    `EnvironmentFile` at `/etc/ferrogate/mia.env`, and enables/starts the `mia`
+    service (restarting it when the env file changes).
+  - Configures the agent through `FERROGATE_*` variables: CMIS endpoint and
+    SPKI pin (`cmis_endpoint` / `cmis_spki_pin`), the helper-API socket
+    (`helper_socket` / `helper_socket_mode`), the signed caller allowlist
+    (`allowlist_path` / `allowlist_key` / `allowlist_max_age_secs`), attestation
+    (`ima_log`), hardening toggles (`seccomp`, `require_ima`, `skip_hardening`,
+    `run_as_uid` / `run_as_gid`), `rust_log`, and free-form `extra_env`.
+  - Fails fast when `allowlist_path` is set without `allowlist_key` (the agent
+    rejects an unverifiable allowlist).
+  - Optional custom package repository, **off by default** (`manage_repo`,
+    `repo_baseurl`, `repo_descr`, `repo_gpgcheck`, `repo_gpgkey`, `repo_release`,
+    `repo_components`): when enabled, declares a `yumrepo` on the RedHat family
+    or an apt source list on the Debian family, ordered before the package.
+  - This is distinct from the container-based `mia_enable` switch on the main
+    `ferrogate` class, which remains for images that bundle the `mia` binary.
+
+### Changed
+- **Subordinate UID/GID management moved to baseapp (breaking).** The
+  `subid_management` parameter (`'usermod'` / `'podman'` / `'none'`) is removed
+  and replaced by a single boolean `manage_subids` (default `true`). FerroGate
+  now registers the service user's range through `baseapp::subid`, and baseapp
+  owns `/etc/subuid` / `/etc/subgid` as concat targets — so ferrogate and other
+  rootless apps (e.g. bastionvault) share one consistently-managed pair of files
+  instead of fighting over them (the previous `usermod` default appended outside
+  any concat manager and was purged each run on nodes where `puppet/podman`
+  managed the files). **Requires `baseapp` >= 0.3.0.** If `puppet/podman` is also
+  on the node, leave its `manage_subuid => false` (the default) so it does not
+  declare a competing `Concat['/etc/subuid']`.
+  - Migration: remove any `ferrogate::subid_management` data. Default nodes need
+    no change; nodes that set `subid_management => 'none'` should set
+    `manage_subids => false`.
+
 ## [0.3.6] - 2026-06-03
 
 ### Changed

@@ -71,41 +71,21 @@ class ferrogate::install {
     if $manage_user {
       User[$user] -> Exec['ferrogate-enable-linger']
 
-      case $ferrogate::_subid_management {
-        'usermod': {
-          # Standalone: append directly with usermod. Only safe when nothing
-          # else owns /etc/subuid|subgid. If the puppet/podman module manages
-          # them (concat), it will purge these entries every run — switch to
-          # `subid_management => 'podman'` on such nodes.
-          $_subid_end = $_subid_start + $_subid_count - 1
-
-          exec { 'ferrogate-add-subids':
-            command => "usermod --add-subuids ${_subid_start}-${_subid_end} --add-subgids ${_subid_start}-${_subid_end} ${user}",
-            path    => ['/usr/sbin', '/sbin', '/usr/bin', '/bin'],
-            unless  => "grep -q '^${user}:' /etc/subuid && grep -q '^${user}:' /etc/subgid",
-            require => User[$user],
-            before  => Exec['ferrogate-enable-linger'],
-          }
+      # Register the rootless subordinate ID range through baseapp, which owns
+      # /etc/subuid and /etc/subgid as concat targets. This is the single,
+      # node-wide authority for those files, so ferrogate coexists with other
+      # rootless apps (e.g. bastionvault) instead of fighting over them. The
+      # files must be fully written before `podman system migrate` reads the
+      # ranges into the user's container storage, so order the concat targets
+      # ahead of linger/migrate.
+      if $ferrogate::_manage_subids {
+        baseapp::subid { $user:
+          subid   => $_subid_start,
+          count   => $_subid_count,
+          require => User[$user],
         }
-        'podman': {
-          # Register the ranges through the puppet/podman module so they become
-          # concat fragments of its managed /etc/subuid|subgid instead of being
-          # purged by it. Requires the puppet/podman module and its `podman`
-          # class to be declared on the node (e.g. via bastionvault).
-          podman::subuid { $user:
-            subuid => $_subid_start,
-            count  => $_subid_count,
-          }
-          podman::subgid { $user:
-            subgid => $_subid_start,
-            count  => $_subid_count,
-          }
-          Podman::Subuid[$user] -> Exec['ferrogate-enable-linger']
-          Podman::Subgid[$user] -> Exec['ferrogate-enable-linger']
-        }
-        default: {
-          # 'none': subids managed elsewhere; do nothing here.
-        }
+        Concat['/etc/subuid'] -> Exec['ferrogate-enable-linger']
+        Concat['/etc/subgid'] -> Exec['ferrogate-enable-linger']
       }
 
       # Rootless podman remaps the container's internal uid/gid (the image's

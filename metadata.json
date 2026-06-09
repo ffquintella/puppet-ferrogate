@@ -3,14 +3,18 @@
   "dependencies": [
     {
       "name": "ffquintella-baseapp",
-      "version_requirement": ">= 0.1.0 < 2.0.0"
+      "version_requirement": ">= 0.3.0 < 2.0.0"
     },
     {
       "name": "puppetlabs/stdlib",
       "version_requirement": ">= 8.0.0 < 10.0.0"
+    },
+    {
+      "name": "puppetlabs/concat",
+      "version_requirement": ">= 7.0.0 < 10.0.0"
     }
   ],
-  "description": "Deploys FerroGate (CMIS and MIA) as rootless podman (Quadlet) or docker containers, managed by systemd, with SELinux configuration and a dedicated service user.",
+  "description": "Deploys FerroGate (CMIS and MIA) as rootless podman (Quadlet) or docker containers, managed by systemd, with SELinux configuration and a dedicated service user. Includes a standalone ferrogate::mia class to install and configure the MIA host agent from its OS package.",
   "issues_url": "",
   "license": "Apache-2.0",
   "name": "ferrogate",
@@ -49,5 +53,5 @@
   ],
   "source": "",
   "summary": "OpenVox module: ferrogate",
-  "version": "0.3.7"
+  "version": "0.4.0"
 }

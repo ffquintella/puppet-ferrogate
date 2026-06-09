@@ -127,6 +127,81 @@ class { 'ferrogate':
 > those operator commands against a node with `cmis_tls_enable => false`, or use
 > a TLS-aware client.
 
+## MIA host agent (`ferrogate::mia`)
+
+FerroGate ships the **Machine Identity Agent** as a native host package
+(`ferrogate-mia`: a static `/usr/bin/mia` binary plus a `mia` systemd unit), not
+in the server image. The `ferrogate::mia` class installs and configures that
+agent and is **fully standalone** — declare it on any host that needs an agent,
+with no dependency on the `ferrogate` server class, `baseapp`, or a container
+runtime:
+
+```puppet
+class { 'ferrogate::mia':
+  cmis_endpoint => 'https://cmis.prod.example.com:8443',
+  cmis_spki_pin => '5f2e...c4',   # SHA-384 SPKI pin (lowercase hex)
+}
+```
+
+The pin is the value the CMIS server node publishes at
+`<config_dir>/cmis.spki-pin.txt` (e.g.
+`/srv/application-config/ferrogate/cmis.spki-pin.txt`) — see
+[Transport TLS](#transport-tls-hybrid-pqc). With a signed local-caller
+allowlist for the helper API:
+
+```puppet
+class { 'ferrogate::mia':
+  cmis_endpoint  => 'https://cmis.example.com:8443',
+  cmis_spki_pin  => '5f2e...c4',
+  allowlist_path => '/etc/ferrogate/allowlist.cbor',
+  allowlist_key  => '/etc/ferrogate/allowlist.pub',
+}
+```
+
+The class installs the package, manages `/etc/ferrogate`, renders the systemd
+`EnvironmentFile` at `/etc/ferrogate/mia.env`, and enables/starts the `mia`
+service. MIA is configured entirely through `FERROGATE_*` env variables; each
+overrides the optional TOML file.
+
+By default the package is assumed reachable through the node's existing
+repositories. To add a custom `ferrogate-mia` repository, set
+`manage_repo => true` and `repo_baseurl` — a `yumrepo` is declared on the RedHat
+family, an apt source list on the Debian family, ordered before the package:
+
+```puppet
+class { 'ferrogate::mia':
+  cmis_endpoint => 'https://cmis.example.com:8443',
+  cmis_spki_pin => '5f2e...c4',
+  manage_repo   => true,
+  repo_baseurl  => 'https://repo.example.com/ferrogate/el9/x86_64',
+  repo_gpgkey   => 'https://repo.example.com/ferrogate/RPM-GPG-KEY',
+}
+```
+
+| Parameter (key ones)   | Default                     | Description                                              |
+| ---------------------- | --------------------------- | -------------------------------------------------------- |
+| `package_name`         | `'ferrogate-mia'`           | MIA OS package.                                          |
+| `package_ensure`       | `'installed'`               | `ensure` for the package.                               |
+| `manage_repo`          | `false`                     | Add a custom `ferrogate-mia` repo (needs `repo_baseurl`).|
+| `repo_baseurl`         | `undef`                     | Repository URL (yumrepo `baseurl` / apt `deb` URI).     |
+| `repo_gpgkey`          | `undef`                     | GPG key (RedHat URL/path; Debian `signed-by` keyring).  |
+| `cmis_endpoint`        | `undef`                     | `FERROGATE_CMIS_ENDPOINT` — the CMIS server URL.        |
+| `cmis_spki_pin`        | `undef`                     | `FERROGATE_CMIS_SPKI_PIN` — accepted SPKI pin (SHA-384).|
+| `helper_socket`        | `'/run/ferrogate/mia.sock'` | Helper-API socket; its presence enables the helper API. |
+| `allowlist_path`       | `undef`                     | Signed CBOR caller allowlist (requires `allowlist_key`).|
+| `allowlist_key`        | `undef`                     | Enrollment public key that verifies the allowlist.      |
+| `seccomp`              | `undef`                     | `FERROGATE_SECCOMP`: `enforce`/`audit`/`off`.           |
+| `skip_hardening`       | `false`                     | Set `FERROGATE_SKIP_HARDENING=1` (dev only).            |
+| `rust_log`             | `'info'`                    | `RUST_LOG` tracing filter.                              |
+
+> This is distinct from the container-based `mia_enable` switch on the main
+> `ferrogate` class (which runs `mia` inside the server image, only for images
+> that bundle it — see [Limitations](#limitations)). `ferrogate::mia` is the
+> way to run a real agent on a production host.
+
+All parameters can be driven from Hiera; see the puppet-strings docs in
+[`manifests/mia.pp`](manifests/mia.pp) for the full list.
+
 ## Operator CLI
 
 When CMIS is enabled the module installs a host wrapper at
@@ -197,7 +272,9 @@ Key parameters (see the puppet-strings docs in
   OS package, not run as a container. `mia_enable` therefore defaults to
   `false`; enabling it against the standard image makes the MIA unit fail
   (`exec: mia: not found`). Only set `mia_enable => true` against an image that
-  actually bundles the `mia` binary.
+  actually bundles the `mia` binary. **To run a real agent, use the standalone
+  [`ferrogate::mia`](#mia-host-agent-ferrogatemia) class**, which installs the
+  `ferrogate-mia` host package instead.
 - **CMIS TLS is on by default.** With TLS on, the host CLI wrapper targets an
   `https://` loopback; the in-container `ferrogate` CLI pins the mounted server
   cert automatically, which requires a CLI with F01 hybrid-PQC transport support
@@ -212,13 +289,16 @@ Key parameters (see the puppet-strings docs in
   `false` on a host prepared for it, or run MIA outside a container.
 - Rootless podman requires `systemd` linger and `subuid`/`subgid` ranges for the
   service user. The module enables linger and, by default
-  (`subid_management => 'usermod'`), allocates the ID ranges itself. On a node
-  where the `puppet/podman` module already manages `/etc/subuid` and
-  `/etc/subgid` via concat (for example alongside `bastionvault`), set
-  `subid_management => 'podman'` so FerroGate registers its ranges as concat
-  fragments instead of having them purged each run. **Stable subuids are
-  required** — if they are purged, the rootless container falls back to the
-  overflow uid and cannot write its volumes.
+  (`manage_subids => true`), registers the service user's range through
+  **`baseapp::subid`**. baseapp owns `/etc/subuid` and `/etc/subgid` as concat
+  targets, so several rootless apps on one node (e.g. ferrogate +
+  `bastionvault`) each contribute a fragment and share one consistently-managed
+  pair of files. **baseapp must be the only manager of those files:** if the
+  `puppet/podman` module is also on the node, leave its `manage_subuid => false`
+  (the default) so it does not declare a competing `Concat['/etc/subuid']`. Set
+  `manage_subids => false` to let an operator or another module own the ranges.
+  **Stable subuids are required** — if they are purged, the rootless container
+  falls back to the overflow uid and cannot write its volumes.
 - The container image runs as a non-root user (uid 10001). Under rootless podman
   that internal id is remapped to a host subordinate id, so the bind-mounted
   log/audit volumes are owned by a companion `<user>-pod` account at the mapped

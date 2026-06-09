@@ -35,10 +35,17 @@ describe 'ferrogate' do
       is_expected.to contain_exec('ferrogate-enable-linger')
     end
 
-    it 'allocates subordinate UID/GID ranges for the rootless user' do
-      is_expected.to contain_exec('ferrogate-add-subids').with(
-        command: 'usermod --add-subuids 655425536-655491071 --add-subgids 655425536-655491071 ferrogate',
+    it 'registers the subordinate UID/GID range through baseapp (single owner)' do
+      is_expected.to contain_baseapp__subid('ferrogate').with(
+        subid: 655_425_536,
+        count: 65_536,
       )
+      is_expected.to contain_concat__fragment('baseapp-subuid-ferrogate').with(
+        target:  '/etc/subuid',
+        content: 'ferrogate:655425536:65536',
+      )
+      is_expected.to contain_concat('/etc/subuid')
+      is_expected.to contain_concat('/etc/subgid')
     end
 
     it 'migrates podman storage before pulling so the new subids take effect' do
@@ -371,6 +378,17 @@ describe 'ferrogate' do
         command: 'mia',
         devices: ['/dev/tpmrm0'],
       )
+    end
+  end
+
+  context 'with subid management disabled' do
+    let(:facts) { BASE_FACTS }
+    let(:params) { { manage_subids: false } }
+
+    it { is_expected.to compile }
+
+    it 'does not register a baseapp::subid (an operator/another module owns it)' do
+      is_expected.not_to contain_baseapp__subid('ferrogate')
     end
   end
 

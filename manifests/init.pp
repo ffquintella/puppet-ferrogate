@@ -53,18 +53,18 @@
 #   subordinate id, so the login user — which only owns container id 0 — cannot
 #   own the volumes; `keep-id`, which would avoid the remap, is broken on
 #   podman 5.x + EL10/UEK.)
-# @param subid_management
-#   How rootless podman's subordinate UID/GID ranges (`/etc/subuid`,
-#   `/etc/subgid`) are allocated for the dedicated user:
-#     * `'usermod'` (default) — standalone `usermod --add-subuids/--add-subgids`
-#       exec. Use on nodes where nothing else manages these files.
-#     * `'podman'` — declare `podman::subuid`/`podman::subgid` (from the
-#       puppet/podman module) so the ranges integrate with that module's
-#       concat-managed files instead of being purged by it. Use on nodes where
-#       puppet/podman is in play (e.g. alongside bastionvault). **Requires** the
-#       puppet/podman module installed and its `podman` class declared.
-#     * `'none'` — do not manage subids here (an operator/another module does).
-#   Ignored for the docker runtime.
+# @param manage_subids
+#   Whether to register the dedicated user's rootless subordinate UID/GID range
+#   (`/etc/subuid`, `/etc/subgid`) through `baseapp::subid`. **Defaults to
+#   `true`.** baseapp owns those files as concat targets, so every rootless app
+#   on the node (e.g. ferrogate + bastionvault) contributes one fragment and
+#   they stop fighting over the files. Set `false` if an operator or another
+#   module manages the ranges. Ignored for the docker runtime.
+#
+#   **Single owner:** baseapp must be the only manager of `/etc/subuid` /
+#   `/etc/subgid`. If the `puppet/podman` module is also on the node, leave its
+#   `manage_subuid => false` (the default) so it does not declare a competing
+#   `Concat['/etc/subuid']`.
 # @param subid_start
 #   First subordinate id for the dedicated user. Defaults to `uid * 65536`, a
 #   deterministic per-user block that does not overlap other users' ranges.
@@ -165,7 +165,7 @@ class ferrogate (
   Integer[0]                       $uid                = 10001,
   Integer[0]                       $gid                = 10001,
   Boolean                          $manage_user        = true,
-  Enum['usermod', 'podman', 'none'] $subid_management   = 'usermod',
+  Boolean                          $manage_subids      = true,
   Optional[Integer[0]]             $subid_start        = undef,
   Integer[1]                       $subid_count        = 65536,
   Boolean                          $manage_selinux     = true,
@@ -241,7 +241,7 @@ class ferrogate (
   $_uid                = $uid
   $_gid                = $gid
   $_manage_user        = $manage_user
-  $_subid_management   = $subid_management
+  $_manage_subids      = $manage_subids
   $_subid_start        = $subid_start
   $_subid_count        = $subid_count
   $_pod_user           = "${user}-pod"
