@@ -84,6 +84,8 @@ describe 'ferrogate' do
     # Bind-mounted volumes are owned by the host id the rootless container's
     # internal uid/gid (10001) maps to: subid_start (10001*65536) + 10001 - 1.
     ['/srv/application-data/ferrogate/audit',
+     '/srv/application-data/ferrogate/raft',
+     '/srv/application-data/ferrogate/issuer',
      '/srv/application-logs/ferrogate'].each do |dir|
       it "manages volume directory #{dir} owned by the container-mapped id" do
         is_expected.to contain_file(dir).with(
@@ -117,6 +119,8 @@ describe 'ferrogate' do
         volumes:  [
           '/srv/application-logs/ferrogate:/opt/ferrogate/logs',
           '/srv/application-data/ferrogate/audit:/var/lib/ferrogate/audit',
+          '/srv/application-data/ferrogate/raft:/var/lib/ferrogate/raft',
+          '/srv/application-data/ferrogate/issuer:/var/lib/ferrogate/issuer',
           '/srv/application-config/ferrogate/tls:/etc/ferrogate/tls', # TLS on by default
         ],
       )
@@ -222,6 +226,8 @@ describe 'ferrogate' do
         volumes: [
           '/srv/application-logs/ferrogate:/opt/ferrogate/logs',
           '/srv/application-data/ferrogate/audit:/var/lib/ferrogate/audit',
+          '/srv/application-data/ferrogate/raft:/var/lib/ferrogate/raft',
+          '/srv/application-data/ferrogate/issuer:/var/lib/ferrogate/issuer',
           '/srv/application-config/ferrogate/tls:/etc/ferrogate/tls',
         ],
       )
@@ -277,6 +283,8 @@ describe 'ferrogate' do
         volumes: [
           '/srv/application-logs/ferrogate:/opt/ferrogate/logs',
           '/srv/application-data/ferrogate/audit:/var/lib/ferrogate/audit',
+          '/srv/application-data/ferrogate/raft:/var/lib/ferrogate/raft',
+          '/srv/application-data/ferrogate/issuer:/var/lib/ferrogate/issuer',
         ],
       )
     end
@@ -305,6 +313,8 @@ describe 'ferrogate' do
     it 'nests directories under the environment variant' do
       is_expected.to contain_file('/srv/application-config/ferrogate/staging').with(ensure: 'directory')
       is_expected.to contain_file('/srv/application-data/ferrogate/staging/audit').with(ensure: 'directory')
+      is_expected.to contain_file('/srv/application-data/ferrogate/staging/raft').with(ensure: 'directory')
+      is_expected.to contain_file('/srv/application-data/ferrogate/staging/issuer').with(ensure: 'directory')
     end
   end
 

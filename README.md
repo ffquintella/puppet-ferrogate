@@ -35,6 +35,8 @@ optional **environment variant** (empty by default):
 ```
 /srv/application-config/ferrogate[/<app_environment>]/{cmis,mia}.env
 /srv/application-data/ferrogate[/<app_environment>]/audit   # CMIS WORM audit store
+/srv/application-data/ferrogate[/<app_environment>]/raft    # CMIS raft store (allowlists, proposals, SVIDs)
+/srv/application-data/ferrogate[/<app_environment>]/issuer  # CMIS issuer signing key
 /srv/application-logs/ferrogate[/<app_environment>]         # traced output
 ```
 

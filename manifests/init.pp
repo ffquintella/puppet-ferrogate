@@ -232,6 +232,8 @@ class ferrogate (
   $data_dir   = "/srv/application-data/${_suffix}"
   $logs_dir   = "/srv/application-logs/${_suffix}"
   $audit_dir  = "${data_dir}/audit"
+  $raft_dir   = "${data_dir}/raft"
+  $issuer_dir = "${data_dir}/issuer"
 
   # Re-export the parameters as body variables so the contained sub-classes can
   # read them as `$ferrogate::_<name>` (qualified class *parameters* are not

@@ -4,6 +4,20 @@ All notable changes to this module are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this module
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-06-10
+
+### Fixed
+- **CMIS lost all allowlists, proposals, issued SVIDs and its issuer signing
+  key on every image upgrade.** FerroGate 0.18.x persists that state under
+  `/var/lib/ferrogate/raft` (`CMIS_RAFT_DIR` default) and
+  `/var/lib/ferrogate/issuer` (`CMIS_ISSUER_KEY` default), but the module never
+  bind-mounted those paths, so the raft store landed on the container's
+  ephemeral layer and the issuer key in an anonymous podman volume — both
+  discarded whenever the container is recreated (e.g. on every image bump).
+  The module now manages `data_dir/raft` and `data_dir/issuer` (owned by the
+  container-mapped id, like the audit dir) and bind-mounts them into the CMIS
+  container.
+
 ## [0.4.0] - 2026-06-08
 
 ### Added
