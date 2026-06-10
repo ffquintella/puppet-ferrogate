@@ -4,6 +4,25 @@ All notable changes to this module are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this module
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] - 2026-06-10
+
+### Added
+- **`cmis_allowlist_proposals` — configure CMIS host-driven allowlist
+  proposals, on by default.** FerroGate's MIA proposes the local callers it
+  observes back to CMIS over the `ProposeAllowlist` RPC so a freshly installed
+  host can bootstrap its own allowlist. The module now emits
+  `CMIS_ALLOWLIST_PROPOSALS` into `cmis.env`, exposed as the
+  `Enum['off','bootstrap','always']` parameter `cmis_allowlist_proposals`:
+  - `'off'` — never auto-adopt; every proposal queues for operator review.
+  - `'bootstrap'` (**default**) — auto-adopt only when the host has no allowlist
+    yet (first-use TOFU); any change to an existing allowlist queues for review.
+  - `'always'` — auto-adopt every accepted proposal, including changes.
+
+  Every proposal is still verified (SVID + signature) regardless of policy;
+  this only governs whether an accepted proposal becomes the live allowlist on
+  its own. The previous behaviour left the variable unset, which CMIS already
+  treats as `bootstrap`; the module now sets it explicitly.
+
 ## [0.4.1] - 2026-06-10
 
 ### Fixed

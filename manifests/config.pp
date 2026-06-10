@@ -80,11 +80,12 @@ class ferrogate::config {
       group   => $group,
       mode    => '0640',
       content => epp('ferrogate/cmis.env.epp', {
-          'rust_log'    => $ferrogate::_rust_log,
-          'cmis_listen' => $ferrogate::_cmis_listen,
-          'tls_cert'    => $tls_cert,
-          'tls_key'     => $tls_key,
-          'extra_env'   => $ferrogate::_extra_env,
+          'rust_log'            => $ferrogate::_rust_log,
+          'cmis_listen'         => $ferrogate::_cmis_listen,
+          'tls_cert'            => $tls_cert,
+          'tls_key'             => $tls_key,
+          'allowlist_proposals' => $ferrogate::_cmis_allowlist_proposals,
+          'extra_env'           => $ferrogate::_extra_env,
       }),
       require => File[$config_dir],
     }

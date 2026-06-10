@@ -248,6 +248,7 @@ Key parameters (see the puppet-strings docs in
 | `cmis_listen`         | `'0.0.0.0:8443'` | `CMIS_LISTEN` inside the container.                      |
 | `cmis_port`           | `8443`           | Host port published for CMIS.                            |
 | `cmis_container_port` | `8443`           | Container port CMIS listens on (match `cmis_listen`).    |
+| `cmis_allowlist_proposals` | `'bootstrap'` | `CMIS_ALLOWLIST_PROPOSALS` — host-driven `ProposeAllowlist` policy: `off`/`bootstrap`/`always`. |
 | `cmis_tls_enable`     | `true`           | Terminate hybrid-PQC TLS on CMIS (else plaintext bring-up). |
 | `cmis_tls_cert` / `cmis_tls_key` | `undef`| Supplied PEM cert chain + key (else self-signed is generated). |
 | `cmis_tls_manage_cert`| `true`           | Generate a self-signed P-384 cert when none is supplied. |

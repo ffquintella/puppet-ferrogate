@@ -85,6 +85,18 @@
 #   Host port published for CMIS (mapped to `cmis_container_port`).
 # @param cmis_container_port
 #   Container-side port CMIS listens on. Must match the port in `cmis_listen`.
+# @param cmis_allowlist_proposals
+#   `CMIS_ALLOWLIST_PROPOSALS` — how CMIS treats host-driven allowlist proposals
+#   submitted via the `ProposeAllowlist` RPC (MIA proposes the local callers it
+#   observes so a freshly installed host can bootstrap its own allowlist). All
+#   proposals are verified (SVID + signature) regardless; this only governs
+#   whether an accepted proposal becomes the live allowlist on its own:
+#   - `'off'` — never auto-adopt; every proposal queues for operator review.
+#   - `'bootstrap'` — **default, on** — auto-adopt only when the host has no
+#     allowlist yet (first-use TOFU); any change to an existing allowlist queues
+#     for review.
+#   - `'always'` — auto-adopt every accepted proposal, including changes to an
+#     existing allowlist. Most convenient, weakest.
 # @param cmis_tls_enable
 #   Terminate **hybrid-PQC TLS** (TLS 1.3, `X25519MLKEM768`-only) on the CMIS
 #   listener. When `true` (the default) the module sets `CMIS_TLS_CERT` /
@@ -175,6 +187,7 @@ class ferrogate (
   String[1]                        $cmis_listen        = '0.0.0.0:8443',
   Stdlib::Port                     $cmis_port          = 8443,
   Stdlib::Port                     $cmis_container_port = 8443,
+  Enum['off', 'bootstrap', 'always'] $cmis_allowlist_proposals = 'bootstrap',
   Boolean                          $cmis_tls_enable    = true,
   Optional[String[1]]              $cmis_tls_cert      = undef,
   Optional[String[1]]              $cmis_tls_key       = undef,
@@ -257,6 +270,7 @@ class ferrogate (
   $_cmis_listen        = $cmis_listen
   $_cmis_port          = $cmis_port
   $_cmis_container_port = $cmis_container_port
+  $_cmis_allowlist_proposals = $cmis_allowlist_proposals
   $_cmis_tls_enable      = $cmis_tls_enable
   $_cmis_tls_cert        = $cmis_tls_cert
   $_cmis_tls_key         = $cmis_tls_key

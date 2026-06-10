@@ -239,6 +239,24 @@ describe 'ferrogate' do
     end
   end
 
+  context 'allowlist proposal policy' do
+    let(:facts) { BASE_FACTS }
+
+    it 'defaults to bootstrap (on) and still renders the cmis env file' do
+      is_expected.to compile
+      is_expected.to contain_file('/srv/application-config/ferrogate/cmis.env')
+    end
+
+    %w[off bootstrap always].each do |policy|
+      context "with cmis_allowlist_proposals => '#{policy}'" do
+        let(:params) { { cmis_allowlist_proposals: policy } }
+
+        it { is_expected.to compile }
+        it { is_expected.to contain_file('/srv/application-config/ferrogate/cmis.env') }
+      end
+    end
+  end
+
   context 'CMIS TLS with a supplied certificate' do
     let(:facts) { BASE_FACTS }
     let(:params) do
