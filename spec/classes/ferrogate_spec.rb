@@ -185,14 +185,23 @@ describe 'ferrogate' do
       )
     end
 
-    it 'generates a self-signed P-384 certificate when none is supplied' do
+    it 'generates the P-384 key once, separately from the certificate (stable SPKI)' do
+      is_expected.to contain_exec('ferrogate-tls-genkey').with(
+        creates: '/srv/application-config/ferrogate/tls/cmis.key',
+      )
+      is_expected.to contain_exec('ferrogate-tls-genkey')
+        .with_command(%r{openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-384})
+        .with_command(%r{-out /srv/application-config/ferrogate/tls/cmis\.key})
+    end
+
+    it 'issues the self-signed certificate from the existing key when none is supplied' do
       is_expected.to contain_exec('ferrogate-tls-generate').with(
         creates: '/srv/application-config/ferrogate/tls/cmis.crt',
       )
       is_expected.to contain_exec('ferrogate-tls-generate')
-        .with_command(%r{openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-384})
-        .with_command(%r{-keyout /srv/application-config/ferrogate/tls/cmis\.key})
+        .with_command(%r{openssl req -x509 -key /srv/application-config/ferrogate/tls/cmis\.key})
         .with_command(%r{-out /srv/application-config/ferrogate/tls/cmis\.crt})
+        .that_requires('Exec[ferrogate-tls-genkey]')
     end
 
     it 'manages the cert and key files owned by the container-mapped id (no content when generated)' do
@@ -268,7 +277,8 @@ describe 'ferrogate' do
 
     it { is_expected.to compile }
 
-    it 'does not generate a certificate' do
+    it 'does not generate a key or certificate' do
+      is_expected.not_to contain_exec('ferrogate-tls-genkey')
       is_expected.not_to contain_exec('ferrogate-tls-generate')
     end
 

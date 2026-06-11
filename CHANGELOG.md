@@ -4,6 +4,22 @@ All notable changes to this module are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this module
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.3] - 2026-06-11
+
+### Fixed
+- **CMIS TLS SPKI pin now survives certificate re-issue and upgrades.** The
+  self-signed cert path generated the P-384 private key and the certificate in
+  a single `openssl req -newkey` exec keyed on the cert file, so re-issuing the
+  cert (removing `cmis.crt`, or the tls dir being recreated during an upgrade)
+  silently generated a **new key** — changing the SHA-384 SPKI pin and breaking
+  every pinned client (MIAs, BastionVault `cmis_grpc`) at once. Key generation
+  (`ferrogate-tls-genkey`, keyed on `cmis.key`) is now a separate idempotent
+  step from cert issuance (`ferrogate-tls-generate`, issues from the existing
+  key): removing only the cert re-issues with the same key and an unchanged
+  pin. Rotating the pin is now a deliberate act — remove both the key and the
+  cert, re-run Puppet, and re-pin every client. Completes what 0.4.1 did for
+  the raft store and issuer key.
+
 ## [0.4.2] - 2026-06-10
 
 ### Added
