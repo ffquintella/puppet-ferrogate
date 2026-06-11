@@ -129,6 +129,47 @@ class { 'ferrogate':
 > those operator commands against a node with `cmis_tls_enable => false`, or use
 > a TLS-aware client.
 
+## High Availability (CMIS Raft cluster)
+
+CMIS keeps every durable store — issued SVIDs, host allowlists, pending
+allowlist proposals — in a [hiqlite](https://github.com/sebadob/hiqlite)-backed
+Raft state machine under the `raft` volume. By default the module runs a
+**single-node** cluster: the node is its own only peer, elects itself leader,
+and never looks for others — state still persists across restarts and image
+upgrades. Nothing extra is configured for this; it is the `cmis_cluster_peers`
+empty default.
+
+To run a **multi-node** cluster (F05 HA), list every peer — including this node
+— in `cmis_cluster_peers`, keyed by Raft node id, and set `cmis_node_id` to this
+node's id. A multi-node cluster also requires the fleet-wide shared secrets
+`cmis_raft_secret` / `cmis_api_secret` (≥ 16 characters, identical on every
+node). The module renders `CMIS_CLUSTER_PEERS` / `CMIS_NODE_ID` / the secrets
+into `cmis.env` and publishes the Raft (`cmis_raft_port`, default 9601) and
+management-API (`cmis_api_port`, default 9602) transports alongside the gRPC
+port.
+
+```puppet
+# node 2 of a three-node cluster
+class { 'ferrogate':
+  cmis_cluster_peers => {
+    1 => { 'raft_addr' => '10.0.0.1:9601', 'api_addr' => '10.0.0.1:9602' },
+    2 => { 'raft_addr' => '10.0.0.2:9601', 'api_addr' => '10.0.0.2:9602' },
+    3 => { 'raft_addr' => '10.0.0.3:9601', 'api_addr' => '10.0.0.3:9602' },
+  },
+  cmis_node_id     => 2,
+  cmis_raft_secret => $raft_secret,  # ≥16 chars, shared across the fleet
+  cmis_api_secret  => $api_secret,
+}
+```
+
+> **Network reachability:** upstream CMIS currently binds the Raft/API
+> transports to the container's loopback interface (F05 "deferred: pin the
+> cluster to a private network"), so cross-host clustering needs host networking
+> or a routable overlay where the published ports reach the container. Keep
+> peers within ~80 ms of each other — Raft commit latency is on the SVID
+> issuance path. Use an odd peer count (3 or 5) so a quorum survives one (or
+> two) node losses.
+
 ## MIA host agent (`ferrogate::mia`)
 
 FerroGate ships the **Machine Identity Agent** as a native host package
@@ -249,6 +290,10 @@ Key parameters (see the puppet-strings docs in
 | `cmis_port`           | `8443`           | Host port published for CMIS.                            |
 | `cmis_container_port` | `8443`           | Container port CMIS listens on (match `cmis_listen`).    |
 | `cmis_allowlist_proposals` | `'bootstrap'` | `CMIS_ALLOWLIST_PROPOSALS` — host-driven `ProposeAllowlist` policy: `off`/`bootstrap`/`always`. |
+| `cmis_cluster_peers`  | `{}`             | CMIS HA Raft peer set (`id => {raft_addr,api_addr}`). Empty = single-node. See [High Availability](#high-availability-cmis-raft-cluster). |
+| `cmis_node_id`        | `undef`          | This node's id within `cmis_cluster_peers` (required when multi-node). |
+| `cmis_raft_port` / `cmis_api_port` | `9601` / `9602` | Raft + management-API transport ports (single-node `*_ADDR`; published when multi-node). |
+| `cmis_raft_secret` / `cmis_api_secret` | `undef` | Fleet-wide shared secrets (≥16 chars). Required for a multi-node cluster. |
 | `cmis_tls_enable`     | `true`           | Terminate hybrid-PQC TLS on CMIS (else plaintext bring-up). |
 | `cmis_tls_cert` / `cmis_tls_key` | `undef`| Supplied PEM cert chain + key (else self-signed is generated). |
 | `cmis_tls_manage_cert`| `true`           | Generate a self-signed P-384 cert when none is supplied. |

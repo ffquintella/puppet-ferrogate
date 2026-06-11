@@ -36,11 +36,26 @@ class ferrogate::service {
       $_cmis_volumes = $_cmis_state_volumes
     }
 
+    # Always publish the gRPC port. A multi-node Raft cluster (F05 HA) also needs
+    # its inter-node Raft + management-API transports reachable by peers, so
+    # publish those ports too. A single-node cluster binds them on loopback only,
+    # so they stay unpublished.
+    $_cmis_grpc_port = "${ferrogate::_cmis_port}:${ferrogate::_cmis_container_port}"
+    if $ferrogate::_cmis_cluster_multinode {
+      $_cmis_ports = [
+        $_cmis_grpc_port,
+        "${ferrogate::_cmis_raft_port}:${ferrogate::_cmis_raft_port}",
+        "${ferrogate::_cmis_api_port}:${ferrogate::_cmis_api_port}",
+      ]
+    } else {
+      $_cmis_ports = [$_cmis_grpc_port]
+    }
+
     ferrogate::instance { 'cmis':
       command  => 'cmis',
       env_file => "${config_dir}/cmis.env",
       volumes  => $_cmis_volumes,
-      ports    => ["${ferrogate::_cmis_port}:${ferrogate::_cmis_container_port}"],
+      ports    => $_cmis_ports,
       devices  => [],
     }
   }

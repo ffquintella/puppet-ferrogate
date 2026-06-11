@@ -4,6 +4,34 @@ All notable changes to this module are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this module
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-06-11
+
+### Added
+- **CMIS High Availability (F05) — manage the Raft cluster parameters.** CMIS
+  keeps every durable store (issued SVIDs, host allowlists, pending allowlist
+  proposals) in a hiqlite-backed Raft state machine. The module now exposes the
+  full HA surface:
+  - `cmis_cluster_peers` — the Raft peer set, keyed by node id
+    (`id => { 'raft_addr' => 'host:port', 'api_addr' => 'host:port' }`). Empty
+    (the default) renders a self-bootstrapping **single-node** cluster
+    (`CMIS_RAFT_ADDR` / `CMIS_API_ADDR` on loopback); a non-empty hash renders
+    `CMIS_CLUSTER_PEERS` (`id=raft_addr,api_addr` joined by `;`) for a
+    **multi-node** cluster.
+  - `cmis_node_id` — which peer entry is this node (`CMIS_NODE_ID`); required,
+    and validated to be a key of `cmis_cluster_peers`, when multi-node.
+  - `cmis_raft_port` / `cmis_api_port` (default `9601` / `9602`) — the Raft and
+    management-API transport ports, published on the host for a multi-node
+    cluster so peers can reach this node.
+  - `cmis_raft_secret` / `cmis_api_secret` — the fleet-wide shared secrets
+    (`CMIS_RAFT_SECRET` / `CMIS_API_SECRET`), typed `String[16]` to enforce
+    hiqlite's ≥16-char minimum and **required** for a multi-node cluster.
+
+  A single-node cluster publishes only the gRPC port, exactly as before; the
+  defaults are unchanged, so existing deployments keep running single-node.
+  See the new "High Availability" section in the README for the network-
+  reachability caveat (upstream CMIS binds the peer transports to container
+  loopback today).
+
 ## [0.4.3] - 2026-06-11
 
 ### Fixed

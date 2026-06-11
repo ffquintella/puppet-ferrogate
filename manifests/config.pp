@@ -85,6 +85,7 @@ class ferrogate::config {
           'tls_cert'            => $tls_cert,
           'tls_key'             => $tls_key,
           'allowlist_proposals' => $ferrogate::_cmis_allowlist_proposals,
+          'ha_env'              => $ferrogate::_cmis_ha_env,
           'extra_env'           => $ferrogate::_extra_env,
       }),
       require => File[$config_dir],

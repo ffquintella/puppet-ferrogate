@@ -266,6 +266,86 @@ describe 'ferrogate' do
     end
   end
 
+  context 'CMIS HA — single-node cluster (default)' do
+    let(:facts) { BASE_FACTS }
+
+    it { is_expected.to compile }
+
+    it 'publishes only the gRPC port (raft/api stay on loopback)' do
+      is_expected.to contain_ferrogate__instance('cmis').with(ports: ['8443:8443'])
+    end
+  end
+
+  context 'CMIS HA — multi-node Raft cluster' do
+    let(:facts) { BASE_FACTS }
+    let(:params) do
+      {
+        cmis_cluster_peers: {
+          1 => { 'raft_addr' => '10.0.0.1:9601', 'api_addr' => '10.0.0.1:9602' },
+          2 => { 'raft_addr' => '10.0.0.2:9601', 'api_addr' => '10.0.0.2:9602' },
+          3 => { 'raft_addr' => '10.0.0.3:9601', 'api_addr' => '10.0.0.3:9602' },
+        },
+        cmis_node_id:     2,
+        cmis_raft_secret: 'a-shared-raft-secret-16+',
+        cmis_api_secret:  'a-shared-api-secret-16++',
+      }
+    end
+
+    it { is_expected.to compile }
+
+    it 'publishes the raft and api transports alongside the gRPC port' do
+      is_expected.to contain_ferrogate__instance('cmis').with(
+        ports: ['8443:8443', '9601:9601', '9602:9602'],
+      )
+    end
+
+    it 'still renders the cmis env file' do
+      is_expected.to contain_file('/srv/application-config/ferrogate/cmis.env')
+    end
+
+    # NOTE: the CMIS_CLUSTER_PEERS / secret lines are rendered by the cmis.env
+    # EPP template, whose conditional blocks the Artichoke test evaluator does
+    # not render faithfully; the env *content* is asserted in acceptance, not
+    # here. The structural wiring (published ports) is exercised above.
+
+    context 'rejects a missing cmis_node_id' do
+      let(:params) do
+        { cmis_cluster_peers: { 1 => { 'raft_addr' => 'a:9601', 'api_addr' => 'a:9602' } } }
+      end
+
+      it { is_expected.to compile.and_raise_error(%r{cmis_node_id is undef}) }
+    end
+
+    context 'rejects a cmis_node_id absent from the peer set' do
+      let(:params) do
+        {
+          cmis_cluster_peers: { 1 => { 'raft_addr' => 'a:9601', 'api_addr' => 'a:9602' } },
+          cmis_node_id:       9,
+          cmis_raft_secret:   'a-shared-raft-secret-16+',
+          cmis_api_secret:    'a-shared-api-secret-16++',
+        }
+      end
+
+      it { is_expected.to compile.and_raise_error(%r{not a key in cmis_cluster_peers}) }
+    end
+
+    context 'rejects a multi-node cluster without shared secrets' do
+      let(:params) do
+        {
+          cmis_cluster_peers: { 1 => { 'raft_addr' => 'a:9601', 'api_addr' => 'a:9602' } },
+          cmis_node_id:       1,
+        }
+      end
+
+      it { is_expected.to compile.and_raise_error(%r{requires both cmis_raft_secret and cmis_api_secret}) }
+    end
+
+    # NOTE: the ≥16-char secret minimum is enforced by the `String[16]` parameter
+    # type, which real Puppet rejects at compile. The Artichoke test evaluator
+    # does not model string-length type bounds (a too-short value compiles
+    # cleanly here), so that rejection is not asserted in this suite.
+  end
+
   context 'CMIS TLS with a supplied certificate' do
     let(:facts) { BASE_FACTS }
     let(:params) do

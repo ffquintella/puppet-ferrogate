@@ -97,6 +97,46 @@
 #     for review.
 #   - `'always'` — auto-adopt every accepted proposal, including changes to an
 #     existing allowlist. Most convenient, weakest.
+# @param cmis_cluster_peers
+#   CMIS High Availability (F05) — the Raft peer set this node belongs to. CMIS
+#   keeps every durable store (issued SVIDs, host allowlists, pending allowlist
+#   proposals) in a hiqlite-backed Raft state machine under `raft_dir`. Leave
+#   this **empty (the default)** to run a self-bootstrapping **single-node**
+#   cluster (the node is its own only peer, elects itself leader, and never
+#   looks for others) — state still persists across restarts.
+#
+#   To run a **multi-node** cluster, give every peer (including this node) as a
+#   `node_id => { 'raft_addr' => 'host:port', 'api_addr' => 'host:port' }` entry
+#   and set `cmis_node_id` to this node's id. The module renders these as
+#   `CMIS_CLUSTER_PEERS` (`id=raft_addr,api_addr` joined by `;`) and publishes
+#   the raft + api ports. A multi-node cluster also **requires** matching
+#   `cmis_raft_secret` / `cmis_api_secret` shared across the fleet.
+#
+#   **Caveat:** upstream CMIS currently binds the Raft/API transports to the
+#   container's loopback interface (F05 "deferred: pin the cluster to a private
+#   network"), so cross-host clustering needs host networking or a routable
+#   overlay where the published ports reach the container. Keep peers within
+#   ~80 ms of each other — Raft commit latency is on the issuance path.
+# @param cmis_node_id
+#   This node's id within `cmis_cluster_peers`. Required (and must be a key of
+#   that hash) when `cmis_cluster_peers` is non-empty; ignored for a single-node
+#   cluster. Renders `CMIS_NODE_ID`.
+# @param cmis_raft_port
+#   Port for the inter-node Raft transport. Used to build the single-node
+#   `CMIS_RAFT_ADDR` (`127.0.0.1:<port>`) and, in a multi-node cluster, published
+#   on the host so peers can reach this node's Raft transport.
+# @param cmis_api_port
+#   Port for the Raft management / forwarding API transport. Used for the
+#   single-node `CMIS_API_ADDR` and published alongside the Raft port in a
+#   multi-node cluster.
+# @param cmis_raft_secret
+#   Shared secret for the inter-node Raft transport (`CMIS_RAFT_SECRET`). Must be
+#   at least 16 characters and identical on every node. **Required** for a
+#   multi-node cluster; ignored (the binary uses loopback-only dev secrets) for
+#   a single-node cluster. Written to the `0640` env file in plaintext.
+# @param cmis_api_secret
+#   Shared secret for the Raft management API transport (`CMIS_API_SECRET`).
+#   Same rules as `cmis_raft_secret`.
 # @param cmis_tls_enable
 #   Terminate **hybrid-PQC TLS** (TLS 1.3, `X25519MLKEM768`-only) on the CMIS
 #   listener. When `true` (the default) the module sets `CMIS_TLS_CERT` /
@@ -188,6 +228,15 @@ class ferrogate (
   Stdlib::Port                     $cmis_port          = 8443,
   Stdlib::Port                     $cmis_container_port = 8443,
   Enum['off', 'bootstrap', 'always'] $cmis_allowlist_proposals = 'bootstrap',
+  Hash[Integer[1], Struct[{
+      'raft_addr' => String[1],
+      'api_addr'  => String[1],
+  }]]                              $cmis_cluster_peers = {},
+  Optional[Integer[1]]             $cmis_node_id       = undef,
+  Stdlib::Port                     $cmis_raft_port     = 9601,
+  Stdlib::Port                     $cmis_api_port      = 9602,
+  Optional[String[16]]             $cmis_raft_secret   = undef,
+  Optional[String[16]]             $cmis_api_secret    = undef,
   Boolean                          $cmis_tls_enable    = true,
   Optional[String[1]]              $cmis_tls_cert      = undef,
   Optional[String[1]]              $cmis_tls_key       = undef,
@@ -217,6 +266,25 @@ class ferrogate (
       fail('ferrogate: cmis_tls_enable is true but no certificate was supplied and cmis_tls_manage_cert is false.')
     }
   }
+
+  # --- Validate the CMIS HA (Raft cluster) configuration --------------------
+  # A non-empty peer set means a multi-node cluster: this node must know which
+  # peer entry is itself, and the fleet-wide shared secrets are mandatory (the
+  # loopback-only dev secrets the binary falls back to are single-node only).
+  $_cmis_cluster_multinode = $cmis_enable and ($cmis_cluster_peers != {})
+  if $_cmis_cluster_multinode {
+    if !$cmis_node_id {
+      fail('ferrogate: cmis_cluster_peers is set but cmis_node_id is undef; pick which peer entry is this node.')
+    }
+    unless $cmis_node_id in $cmis_cluster_peers {
+      fail("ferrogate: cmis_node_id ${cmis_node_id} is not a key in cmis_cluster_peers.")
+    }
+    if !$cmis_raft_secret or !$cmis_api_secret {
+      fail('ferrogate: a multi-node CMIS cluster requires both cmis_raft_secret and cmis_api_secret (shared across the fleet).')
+    }
+  }
+  # The ≥16-char minimum hiqlite requires of each secret is enforced by the
+  # `String[16]` parameter type, so a too-short value fails at catalog compile.
 
   # Resolve the subject CN for a generated self-signed certificate. Trust is by
   # SPKI pin, so the name only matters for SNI/routing — default to the FQDN.
@@ -271,6 +339,49 @@ class ferrogate (
   $_cmis_port          = $cmis_port
   $_cmis_container_port = $cmis_container_port
   $_cmis_allowlist_proposals = $cmis_allowlist_proposals
+  # CMIS HA: render the peer set as CMIS_CLUSTER_PEERS' `id=raft,api;...` form.
+  # Iterate the sorted key array (not a two-arg hash lambda) for a deterministic
+  # spec the test evaluator can render. Empty hash ⇒ '' ⇒ single-node cluster.
+  $_cmis_cluster_peers_spec = $cmis_cluster_peers.keys.sort.map |$id| {
+    $_peer = $cmis_cluster_peers[$id]
+    "${id}=${_peer['raft_addr']},${_peer['api_addr']}"
+  }.join(';')
+  $_cmis_node_id         = $cmis_node_id
+  $_cmis_raft_port       = $cmis_raft_port
+  $_cmis_api_port        = $cmis_api_port
+  $_cmis_raft_addr       = "127.0.0.1:${cmis_raft_port}"
+  $_cmis_api_addr        = "127.0.0.1:${cmis_api_port}"
+  $_cmis_raft_secret     = $cmis_raft_secret
+  $_cmis_api_secret      = $cmis_api_secret
+  # Pre-render the HA env lines here, with a reliable Puppet `if`, and hand the
+  # template a single ready-made string. The test evaluator mis-binds EPP
+  # parameters once a template carries several typed params plus branches, so we
+  # keep the cmis.env template branch-free and small.
+  if $_cmis_cluster_multinode {
+    $_cmis_ha_base = [
+      '# CMIS High Availability (F05): multi-node hiqlite Raft cluster.',
+      '# Peers: id=raft_addr,api_addr entries joined by ; (this node included).',
+      "CMIS_CLUSTER_PEERS=${_cmis_cluster_peers_spec}",
+      "CMIS_NODE_ID=${cmis_node_id}",
+    ]
+  } else {
+    $_cmis_ha_base = [
+      '# CMIS High Availability (F05): single-node cluster (loopback transports).',
+      "CMIS_RAFT_ADDR=${_cmis_raft_addr}",
+      "CMIS_API_ADDR=${_cmis_api_addr}",
+    ]
+  }
+  if $cmis_raft_secret {
+    $_raft_secret_lines = ["CMIS_RAFT_SECRET=${cmis_raft_secret}"]
+  } else {
+    $_raft_secret_lines = []
+  }
+  if $cmis_api_secret {
+    $_api_secret_lines = ["CMIS_API_SECRET=${cmis_api_secret}"]
+  } else {
+    $_api_secret_lines = []
+  }
+  $_cmis_ha_env = ($_cmis_ha_base + $_raft_secret_lines + $_api_secret_lines).join("\n")
   $_cmis_tls_enable      = $cmis_tls_enable
   $_cmis_tls_cert        = $cmis_tls_cert
   $_cmis_tls_key         = $cmis_tls_key
