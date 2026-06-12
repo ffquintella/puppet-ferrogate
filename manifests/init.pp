@@ -107,28 +107,34 @@
 #
 #   To run a **multi-node** cluster, give every peer (including this node) as a
 #   `node_id => { 'raft_addr' => 'host:port', 'api_addr' => 'host:port' }` entry
-#   and set `cmis_node_id` to this node's id. The module renders these as
-#   `CMIS_CLUSTER_PEERS` (`id=raft_addr,api_addr` joined by `;`) and publishes
-#   the raft + api ports. A multi-node cluster also **requires** matching
-#   `cmis_raft_secret` / `cmis_api_secret` shared across the fleet.
+#   and set `cmis_node_id` to this node's id. The `raft_addr`/`api_addr` are the
+#   addresses peers *dial*, so they must be routable from the other nodes
+#   (hostnames or stable IPs, never loopback). The module renders these as
+#   `CMIS_CLUSTER_PEERS` (`id=raft_addr,api_addr` joined by `;`). A multi-node
+#   cluster also **requires** matching `cmis_raft_secret` / `cmis_api_secret`
+#   shared across the fleet.
 #
-#   **Caveat:** upstream CMIS currently binds the Raft/API transports to the
-#   container's loopback interface (F05 "deferred: pin the cluster to a private
-#   network"), so cross-host clustering needs host networking or a routable
-#   overlay where the published ports reach the container. Keep peers within
-#   ~80 ms of each other — Raft commit latency is on the issuance path.
+#   **Networking:** CMIS (≥ 0.18.11) binds its Raft/API transports on
+#   `cmis_raft_listen` (`0.0.0.0`) in multi-node mode, and hiqlite's leader dials
+#   its own advertised address. Rootless `pasta` cannot hairpin a published port
+#   back into its own container, so the module runs the multi-node CMIS container
+#   with **host networking** (set automatically) — the transports bind directly
+#   on the host. Secure the inter-node link with `cmis_peer_tls` (on by default)
+#   unless the peers share a trusted private network. Keep peers within ~80 ms of
+#   each other — Raft commit latency is on the issuance path.
 # @param cmis_node_id
 #   This node's id within `cmis_cluster_peers`. Required (and must be a key of
 #   that hash) when `cmis_cluster_peers` is non-empty; ignored for a single-node
 #   cluster. Renders `CMIS_NODE_ID`.
 # @param cmis_raft_port
 #   Port for the inter-node Raft transport. Used to build the single-node
-#   `CMIS_RAFT_ADDR` (`127.0.0.1:<port>`) and, in a multi-node cluster, published
-#   on the host so peers can reach this node's Raft transport.
+#   `CMIS_RAFT_ADDR` (`127.0.0.1:<port>`) and, in a multi-node cluster, the port
+#   peers dial for this node's Raft transport (bound on `cmis_raft_listen` via
+#   host networking).
 # @param cmis_api_port
 #   Port for the Raft management / forwarding API transport. Used for the
-#   single-node `CMIS_API_ADDR` and published alongside the Raft port in a
-#   multi-node cluster.
+#   single-node `CMIS_API_ADDR` and, in a multi-node cluster, the port peers dial
+#   for this node's management API.
 # @param cmis_raft_secret
 #   Shared secret for the inter-node Raft transport (`CMIS_RAFT_SECRET`). Must be
 #   at least 16 characters and identical on every node. **Required** for a
@@ -137,6 +143,30 @@
 # @param cmis_api_secret
 #   Shared secret for the Raft management API transport (`CMIS_API_SECRET`).
 #   Same rules as `cmis_raft_secret`.
+# @param cmis_raft_listen
+#   Interface the multi-node Raft + management transports **bind**
+#   (`CMIS_RAFT_LISTEN`). Defaults to `0.0.0.0` (all interfaces) so peers on
+#   other hosts can reach this node; the *advertised* address each peer dials is
+#   still its `cmis_cluster_peers` entry. Only rendered for a multi-node cluster
+#   (single-node binds loopback). Set to a specific host IP to bind one NIC.
+# @param cmis_peer_tls
+#   Encrypt the inter-node Raft + management transport with TLS
+#   (`CMIS_PEER_TLS=1`) — hiqlite's rustls transport with auto-generated
+#   self-signed certs, authenticated by the shared `cmis_raft_secret` /
+#   `cmis_api_secret` handshake (the secret never crosses the wire). Defaults to
+#   `true`; recommended whenever peers are not on a trusted private network.
+#   Ignored for a single-node cluster, and superseded by `cmis_peer_tls_cert` /
+#   `cmis_peer_tls_key` when those are set.
+# @param cmis_peer_tls_cert
+#   In-container path to an operator-supplied PEM certificate for the inter-node
+#   transport (`CMIS_PEER_TLS_CERT`), for a stable cert across restarts instead
+#   of the per-process self-signed one. Must be set together with
+#   `cmis_peer_tls_key`; the operator is responsible for making the path
+#   readable inside the container (e.g. via the TLS bind mount). `undef` leaves
+#   the self-signed path (`cmis_peer_tls`).
+# @param cmis_peer_tls_key
+#   In-container path to the PEM private key paired with `cmis_peer_tls_cert`
+#   (`CMIS_PEER_TLS_KEY`). Must be set together with it.
 # @param cmis_tls_enable
 #   Terminate **hybrid-PQC TLS** (TLS 1.3, `X25519MLKEM768`-only) on the CMIS
 #   listener. When `true` (the default) the module sets `CMIS_TLS_CERT` /
@@ -237,6 +267,10 @@ class ferrogate (
   Stdlib::Port                     $cmis_api_port      = 9602,
   Optional[String[16]]             $cmis_raft_secret   = undef,
   Optional[String[16]]             $cmis_api_secret    = undef,
+  String[1]                        $cmis_raft_listen   = '0.0.0.0',
+  Boolean                          $cmis_peer_tls      = true,
+  Optional[Stdlib::Absolutepath]   $cmis_peer_tls_cert = undef,
+  Optional[Stdlib::Absolutepath]   $cmis_peer_tls_key  = undef,
   Boolean                          $cmis_tls_enable    = true,
   Optional[String[1]]              $cmis_tls_cert      = undef,
   Optional[String[1]]              $cmis_tls_key       = undef,
@@ -282,6 +316,10 @@ class ferrogate (
     if !$cmis_raft_secret or !$cmis_api_secret {
       fail('ferrogate: a multi-node CMIS cluster requires both cmis_raft_secret and cmis_api_secret (shared across the fleet).')
     }
+  }
+  # Operator-supplied inter-node TLS material is a cert+key pair or nothing.
+  if ($cmis_peer_tls_cert and !$cmis_peer_tls_key) or (!$cmis_peer_tls_cert and $cmis_peer_tls_key) {
+    fail('ferrogate: set both cmis_peer_tls_cert and cmis_peer_tls_key together, or neither.')
   }
   # The ≥16-char minimum hiqlite requires of each secret is enforced by the
   # `String[16]` parameter type, so a too-short value fails at catalog compile.
@@ -358,11 +396,14 @@ class ferrogate (
   # parameters once a template carries several typed params plus branches, so we
   # keep the cmis.env template branch-free and small.
   if $_cmis_cluster_multinode {
+    # CMIS_RAFT_LISTEN binds the routable interface (peers reach this node here);
+    # the advertised addr each peer dials is still its cmis_cluster_peers entry.
     $_cmis_ha_base = [
       '# CMIS High Availability (F05): multi-node hiqlite Raft cluster.',
       '# Peers: id=raft_addr,api_addr entries joined by ; (this node included).',
       "CMIS_CLUSTER_PEERS=${_cmis_cluster_peers_spec}",
       "CMIS_NODE_ID=${cmis_node_id}",
+      "CMIS_RAFT_LISTEN=${cmis_raft_listen}",
     ]
   } else {
     $_cmis_ha_base = [
@@ -381,7 +422,23 @@ class ferrogate (
   } else {
     $_api_secret_lines = []
   }
-  $_cmis_ha_env = ($_cmis_ha_base + $_raft_secret_lines + $_api_secret_lines).join("\n")
+  # Inter-node transport TLS (multi-node only). An operator cert+key pair takes
+  # precedence over the self-signed switch; the binary reads cert/key first and
+  # falls back to CMIS_PEER_TLS=1. Peer identity is authenticated by the shared
+  # secret, so TLS here is for on-the-wire confidentiality.
+  if !$_cmis_cluster_multinode {
+    $_cmis_peer_tls_lines = []
+  } elsif $cmis_peer_tls_cert and $cmis_peer_tls_key {
+    $_cmis_peer_tls_lines = [
+      "CMIS_PEER_TLS_CERT=${cmis_peer_tls_cert}",
+      "CMIS_PEER_TLS_KEY=${cmis_peer_tls_key}",
+    ]
+  } elsif $cmis_peer_tls {
+    $_cmis_peer_tls_lines = ['CMIS_PEER_TLS=1']
+  } else {
+    $_cmis_peer_tls_lines = []
+  }
+  $_cmis_ha_env = ($_cmis_ha_base + $_raft_secret_lines + $_api_secret_lines + $_cmis_peer_tls_lines).join("\n")
   $_cmis_tls_enable      = $cmis_tls_enable
   $_cmis_tls_cert        = $cmis_tls_cert
   $_cmis_tls_key         = $cmis_tls_key

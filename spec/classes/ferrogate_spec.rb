@@ -293,9 +293,14 @@ describe 'ferrogate' do
 
     it { is_expected.to compile }
 
-    it 'publishes the raft and api transports alongside the gRPC port' do
+    it 'runs the cmis container on the host network and stops publishing ports' do
+      # CMIS binds its Raft/API transports on a routable interface and the leader
+      # self-dials its own FQDN, which rootless pasta cannot hairpin; host
+      # networking is the fix (see service.pp). The transports then bind directly
+      # on the host, so PublishPort is dropped.
       is_expected.to contain_ferrogate__instance('cmis').with(
-        ports: ['8443:8443', '9601:9601', '9602:9602'],
+        networks: ['host'],
+        ports:    [],
       )
     end
 
@@ -338,6 +343,20 @@ describe 'ferrogate' do
       end
 
       it { is_expected.to compile.and_raise_error(%r{requires both cmis_raft_secret and cmis_api_secret}) }
+    end
+
+    context 'rejects a half-supplied inter-node TLS pair' do
+      let(:params) do
+        {
+          cmis_cluster_peers: { 1 => { 'raft_addr' => 'a:9601', 'api_addr' => 'a:9602' } },
+          cmis_node_id:       1,
+          cmis_raft_secret:   'a-shared-raft-secret-16+',
+          cmis_api_secret:    'a-shared-api-secret-16++',
+          cmis_peer_tls_cert: '/etc/ferrogate/tls/peer.crt',
+        }
+      end
+
+      it { is_expected.to compile.and_raise_error(%r{cmis_peer_tls_cert and cmis_peer_tls_key together}) }
     end
 
     # NOTE: the ≥16-char secret minimum is enforced by the `String[16]` parameter

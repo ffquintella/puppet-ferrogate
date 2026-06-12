@@ -7,6 +7,7 @@
       Array[String[1]]     $devices,
       Integer[0]           $uid,
       Integer[0]           $gid,
+      Array[String[1]]     $networks,
 | -%>
 # Managed by Puppet (ferrogate) — do not edit by hand.
 # Rootless Podman Quadlet unit for the FerroGate <%= $command %> service.
@@ -20,6 +21,9 @@ ContainerName=<%= $svc %>
 Image=<%= $image %>
 Exec=<%= $command %>
 EnvironmentFile=<%= $env_file %>
+<% $networks.each |$n| { -%>
+Network=<%= $n %>
+<% } -%>
 <% $volumes.each |$v| { -%>
 Volume=<%= $v %>
 <% } -%>

@@ -141,34 +141,42 @@ empty default.
 
 To run a **multi-node** cluster (F05 HA), list every peer — including this node
 — in `cmis_cluster_peers`, keyed by Raft node id, and set `cmis_node_id` to this
-node's id. A multi-node cluster also requires the fleet-wide shared secrets
+node's id. The `raft_addr`/`api_addr` are the addresses peers *dial*, so they
+must be routable from the other nodes (hostnames or stable IPs, never loopback).
+A multi-node cluster also requires the fleet-wide shared secrets
 `cmis_raft_secret` / `cmis_api_secret` (≥ 16 characters, identical on every
 node). The module renders `CMIS_CLUSTER_PEERS` / `CMIS_NODE_ID` / the secrets
-into `cmis.env` and publishes the Raft (`cmis_raft_port`, default 9601) and
-management-API (`cmis_api_port`, default 9602) transports alongside the gRPC
-port.
+into `cmis.env`, binds the Raft/management transports on `cmis_raft_listen`
+(`0.0.0.0` by default, ports `cmis_raft_port` 9601 / `cmis_api_port` 9602), and
+turns on the encrypted inter-node transport (`cmis_peer_tls`, on by default).
+
+Requires the CMIS image **≥ 0.18.11** (the version that binds a routable
+interface and adds the TLS peer transport). Pin it via `image_tag`.
 
 ```puppet
 # node 2 of a three-node cluster
 class { 'ferrogate':
+  image_tag          => '0.18.11',
   cmis_cluster_peers => {
-    1 => { 'raft_addr' => '10.0.0.1:9601', 'api_addr' => '10.0.0.1:9602' },
-    2 => { 'raft_addr' => '10.0.0.2:9601', 'api_addr' => '10.0.0.2:9602' },
-    3 => { 'raft_addr' => '10.0.0.3:9601', 'api_addr' => '10.0.0.3:9602' },
+    1 => { 'raft_addr' => 'cmis1.example.com:9601', 'api_addr' => 'cmis1.example.com:9602' },
+    2 => { 'raft_addr' => 'cmis2.example.com:9601', 'api_addr' => 'cmis2.example.com:9602' },
+    3 => { 'raft_addr' => 'cmis3.example.com:9601', 'api_addr' => 'cmis3.example.com:9602' },
   },
   cmis_node_id     => 2,
   cmis_raft_secret => $raft_secret,  # ≥16 chars, shared across the fleet
   cmis_api_secret  => $api_secret,
+  # cmis_peer_tls   => true,         # default; set false only on a trusted LAN
 }
 ```
 
-> **Network reachability:** upstream CMIS currently binds the Raft/API
-> transports to the container's loopback interface (F05 "deferred: pin the
-> cluster to a private network"), so cross-host clustering needs host networking
-> or a routable overlay where the published ports reach the container. Keep
-> peers within ~80 ms of each other — Raft commit latency is on the SVID
-> issuance path. Use an odd peer count (3 or 5) so a quorum survives one (or
-> two) node losses.
+> **Networking:** CMIS binds its Raft/API transports on `cmis_raft_listen`
+> (`0.0.0.0`) and hiqlite's leader dials its own advertised address. Rootless
+> `pasta` cannot hairpin a published port back into its own container, so the
+> module runs the multi-node CMIS container with **host networking**
+> (automatic) — the transports bind directly on the host. Leave `cmis_peer_tls`
+> on unless every peer shares a trusted private network. Keep peers within
+> ~80 ms of each other — Raft commit latency is on the SVID issuance path. Use
+> an odd peer count (3 or 5) so a quorum survives one (or two) node losses.
 
 ## MIA host agent (`ferrogate::mia`)
 

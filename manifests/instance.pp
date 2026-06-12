@@ -21,6 +21,14 @@
 #   `host:container` port publications (podman `PublishPort` / docker `-p`).
 # @param devices
 #   Host device paths passed into the container.
+# @param networks
+#   Container network modes (podman `Network=` / docker `--network`). Empty (the
+#   default) leaves the runtime default — rootless `pasta` with published ports.
+#   A multi-node CMIS cluster sets `['host']`: the node must bind a routable host
+#   interface so peers can reach it and the leader can dial its own advertised
+#   FQDN (rootless pasta cannot hairpin a published port back into its own
+#   container). With host networking the ports bind directly on the host, so
+#   `ports` is left empty.
 # @param ensure
 #   Whether the instance should be `running`/`present` or `stopped`/`absent`.
 #
@@ -31,6 +39,7 @@ define ferrogate::instance (
   Array[String[1]]                         $volumes  = [],
   Array[String[1]]                         $ports    = [],
   Array[Stdlib::Absolutepath]              $devices  = [],
+  Array[String[1]]                         $networks = [],
   Enum['running', 'stopped']               $ensure   = 'running',
 ) {
   assert_private()
@@ -60,6 +69,7 @@ define ferrogate::instance (
     'devices'  => $devices,
     'uid'      => $uid,
     'gid'      => $gid,
+    'networks' => $networks,
   }
 
   if $runtime == 'podman' {

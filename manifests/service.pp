@@ -36,19 +36,26 @@ class ferrogate::service {
       $_cmis_volumes = $_cmis_state_volumes
     }
 
-    # Always publish the gRPC port. A multi-node Raft cluster (F05 HA) also needs
-    # its inter-node Raft + management-API transports reachable by peers, so
-    # publish those ports too. A single-node cluster binds them on loopback only,
-    # so they stay unpublished.
+    # Networking depends on the cluster topology:
+    #
+    # * Single-node: rootless `pasta` (the runtime default). CMIS binds its Raft
+    #   and API transports on loopback (CMIS_RAFT_LISTEN unset), so only the gRPC
+    #   port is published; raft/api stay private.
+    #
+    # * Multi-node (F05 HA): host networking. CMIS binds CMIS_RAFT_LISTEN
+    #   (0.0.0.0) on a routable interface so peers can reach it, and hiqlite's
+    #   leader dials its own advertised FQDN — rootless pasta cannot hairpin a
+    #   published port back into its own container, so the node would never reach
+    #   itself. Sharing the host network namespace lets the node bind the real
+    #   host address and reach itself over it. Ports bind directly on the host
+    #   then, so PublishPort is redundant.
     $_cmis_grpc_port = "${ferrogate::_cmis_port}:${ferrogate::_cmis_container_port}"
     if $ferrogate::_cmis_cluster_multinode {
-      $_cmis_ports = [
-        $_cmis_grpc_port,
-        "${ferrogate::_cmis_raft_port}:${ferrogate::_cmis_raft_port}",
-        "${ferrogate::_cmis_api_port}:${ferrogate::_cmis_api_port}",
-      ]
+      $_cmis_ports    = []
+      $_cmis_networks = ['host']
     } else {
-      $_cmis_ports = [$_cmis_grpc_port]
+      $_cmis_ports    = [$_cmis_grpc_port]
+      $_cmis_networks = []
     }
 
     ferrogate::instance { 'cmis':
@@ -57,6 +64,7 @@ class ferrogate::service {
       volumes  => $_cmis_volumes,
       ports    => $_cmis_ports,
       devices  => [],
+      networks => $_cmis_networks,
     }
   }
 
