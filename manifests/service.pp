@@ -28,13 +28,18 @@ class ferrogate::service {
       "${raft_dir}:/var/lib/ferrogate/raft",
       "${issuer_dir}:/var/lib/ferrogate/issuer",
     ]
-    if $ferrogate::_cmis_tls_enable {
-      $_cmis_volumes = $_cmis_state_volumes + [
-        "${ferrogate::_tls_dir}:${ferrogate::_tls_container_dir}",
-      ]
-    } else {
-      $_cmis_volumes = $_cmis_state_volumes
+    # Optional bind mounts: the listener TLS material (cmis_tls_enable) and the
+    # managed inter-node peer CA/leaf (multi-node managed-CA path). Either may be
+    # present independently.
+    $_tls_volume = $ferrogate::_cmis_tls_enable ? {
+      true    => ["${ferrogate::_tls_dir}:${ferrogate::_tls_container_dir}"],
+      default => [],
     }
+    $_peer_volume = $ferrogate::_peer_ca_active ? {
+      true    => ["${ferrogate::_peer_tls_dir}:${ferrogate::_peer_tls_container_dir}"],
+      default => [],
+    }
+    $_cmis_volumes = $_cmis_state_volumes + $_tls_volume + $_peer_volume
 
     # Networking depends on the cluster topology:
     #

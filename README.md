@@ -153,6 +153,56 @@ turns on the encrypted inter-node transport (`cmis_peer_tls`, on by default).
 Requires the CMIS image **≥ 0.18.11** (the version that binds a routable
 interface and adds the TLS peer transport). Pin it via `image_tag`.
 
+### Inter-node TLS trust (peer CA)
+
+hiqlite's split-brain / cluster-metrics client validates each peer's certificate
+with **rustls' platform verifier** — the OS trust store *inside the CMIS
+container* — not the shared-secret handshake the Raft transport uses. A bare
+self-signed `CMIS_PEER_TLS=1` certificate therefore fails that probe with
+`UnknownIssuer` (`failed to verify TLS certificate: invalid peer certificate:
+UnknownIssuer`), leaving the split-brain safety check blind even while Raft keeps
+replicating.
+
+So for a multi-node cluster the module, by default (`cmis_peer_ca_manage`),
+issues this node's inter-node **leaf certificate from a CA** and points the
+container's verifier at that CA via `SSL_CERT_FILE`. The CA cert and leaf are
+written to a host `peer-tls/` directory under the config root and bind-mounted
+into the container at `/etc/ferrogate/peer-tls`; the CA *private* key stays
+host-only and is never mounted. See `ferrogate::peer_ca`.
+
+For this to work across hosts, **every node must trust the CA that signed every
+peer's leaf** — so a real multi-node fleet shares **one** CA: supply the same
+`cmis_peer_ca_cert` / `cmis_peer_ca_key` (the key via eyaml) on every node.
+
+```puppet
+class { 'ferrogate':
+  image_tag          => '0.18.11',
+  cmis_cluster_peers => { 1 => { ... }, 2 => { ... }, 3 => { ... } },
+  cmis_node_id       => 2,
+  cmis_raft_secret   => $raft_secret,
+  cmis_api_secret    => $api_secret,
+  cmis_peer_ca_cert  => $peer_ca_cert,   # SAME CA on every node ⇒ mutual trust
+  cmis_peer_ca_key   => $peer_ca_key,    # eyaml; written 0600, host-only
+  # cmis_peer_cert_san => ['IP:10.0.0.2'],  # if peers dial an address ≠ the FQDN
+}
+```
+
+If `cmis_peer_ca_cert`/`_key` are omitted the module **generates a local CA** —
+fine for a single-node cluster (the node dials itself), but for multiple hosts
+you must distribute the generated `ca.crt`/`peer-ca.key` to every peer, so
+supplying a shared CA is strongly preferred. The leaf's `subjectAltName` defaults
+to the node FQDN; add the dialed address with `cmis_peer_cert_san` when it
+differs (rustls matches the dialed name against the SAN). The peer-CA path
+requires **OpenSSL ≥ 3.0** on the host. To opt out and keep the bare self-signed
+transport, set `cmis_peer_ca_manage => false`; to bring your own leaf entirely,
+set `cmis_peer_tls_cert` / `cmis_peer_tls_key` (you then own trust distribution).
+
+> **Trust scope:** `SSL_CERT_FILE` makes the container's platform verifier trust
+> *only* this CA. That is correct for the inter-node mesh (CMIS does no outbound
+> public-CA TLS, and the F01 listener is authenticated by SPKI pin, not a CA
+> chain). If you need the container to trust public CAs as well, supply a bundle
+> that concatenates the system roots with this CA.
+
 ```puppet
 # node 2 of a three-node cluster
 class { 'ferrogate':

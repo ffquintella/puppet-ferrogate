@@ -167,6 +167,37 @@
 # @param cmis_peer_tls_key
 #   In-container path to the PEM private key paired with `cmis_peer_tls_cert`
 #   (`CMIS_PEER_TLS_KEY`). Must be set together with it.
+# @param cmis_peer_ca_manage
+#   Manage a CA-issued certificate for the inter-node transport (default `true`).
+#   When a multi-node cluster has `cmis_peer_tls` on and no operator-supplied leaf
+#   (`cmis_peer_tls_cert`/`_key`), the module issues this node's leaf from a CA
+#   and points the container's TLS verifier at that CA via `SSL_CERT_FILE` — see
+#   `ferrogate::peer_ca`. This is what lets hiqlite's split-brain / cluster-metrics
+#   client (which uses rustls' platform verifier, not the shared-secret handshake)
+#   accept the peer certificate instead of failing `UnknownIssuer`. Set `false` to
+#   fall back to the bare self-signed `CMIS_PEER_TLS=1` transport. Requires
+#   OpenSSL ≥ 3.0 on the host. Ignored for a single-node cluster, when
+#   `cmis_peer_tls` is `false`, or when an operator leaf pair is supplied.
+# @param cmis_peer_ca_cert
+#   PEM certificate of the CA that signs the inter-node leaf, as a string. **This
+#   is how a multi-node fleet shares one trust anchor:** give every node the same
+#   `cmis_peer_ca_cert`/`cmis_peer_ca_key` (the key via eyaml) so each node's leaf
+#   chains to a CA all the others trust. When `undef`, the module generates a
+#   self-signed local CA — mutually trusted only on a single-node cluster unless
+#   you distribute the generated material to every peer. Set both
+#   `cmis_peer_ca_cert` and `cmis_peer_ca_key` together, or neither.
+# @param cmis_peer_ca_key
+#   PEM private key (EC/PKCS#8) for `cmis_peer_ca_cert`, as a string. Written
+#   host-only (`0600`, never mounted into the container) and used to sign this
+#   node's leaf. Set together with `cmis_peer_ca_cert`.
+# @param cmis_peer_ca_days
+#   Validity in days for a generated CA **and** for the issued leaf. Ignored for a
+#   supplied CA's own validity (the leaf it signs still uses this). Default 3650.
+# @param cmis_peer_cert_san
+#   Extra `subjectAltName` entries for the issued leaf, each a raw OpenSSL SAN
+#   token (e.g. `'DNS:cmis2.example.com'`, `'IP:10.0.0.2'`). The node FQDN is
+#   always added as a `DNS:` SAN. Add the address peers actually dial here when it
+#   is not the FQDN — rustls matches the dialed name against the leaf SAN.
 # @param cmis_tls_enable
 #   Terminate **hybrid-PQC TLS** (TLS 1.3, `X25519MLKEM768`-only) on the CMIS
 #   listener. When `true` (the default) the module sets `CMIS_TLS_CERT` /
@@ -271,6 +302,11 @@ class ferrogate (
   Boolean                          $cmis_peer_tls      = true,
   Optional[Stdlib::Absolutepath]   $cmis_peer_tls_cert = undef,
   Optional[Stdlib::Absolutepath]   $cmis_peer_tls_key  = undef,
+  Boolean                          $cmis_peer_ca_manage = true,
+  Optional[String[1]]              $cmis_peer_ca_cert  = undef,
+  Optional[String[1]]              $cmis_peer_ca_key   = undef,
+  Integer[1]                       $cmis_peer_ca_days  = 3650,
+  Array[String[1]]                 $cmis_peer_cert_san = [],
   Boolean                          $cmis_tls_enable    = true,
   Optional[String[1]]              $cmis_tls_cert      = undef,
   Optional[String[1]]              $cmis_tls_key       = undef,
@@ -320,6 +356,12 @@ class ferrogate (
   # Operator-supplied inter-node TLS material is a cert+key pair or nothing.
   if ($cmis_peer_tls_cert and !$cmis_peer_tls_key) or (!$cmis_peer_tls_cert and $cmis_peer_tls_key) {
     fail('ferrogate: set both cmis_peer_tls_cert and cmis_peer_tls_key together, or neither.')
+  }
+  # A supplied peer CA is likewise a cert+key pair or nothing. When supplied it
+  # is shared fleet-wide (every node issues its leaf from the same CA); when
+  # omitted the module generates a local CA (single-node, or distribute it).
+  if ($cmis_peer_ca_cert and !$cmis_peer_ca_key) or (!$cmis_peer_ca_cert and $cmis_peer_ca_key) {
+    fail('ferrogate: set both cmis_peer_ca_cert and cmis_peer_ca_key together, or neither.')
   }
   # The ≥16-char minimum hiqlite requires of each secret is enforced by the
   # `String[16]` parameter type, so a too-short value fails at catalog compile.
@@ -412,6 +454,42 @@ class ferrogate (
       "CMIS_API_ADDR=${_cmis_api_addr}",
     ]
   }
+  # --- Managed inter-node (peer) transport CA + leaf ------------------------
+  # hiqlite's split-brain / metrics client validates the peer cert with rustls'
+  # platform verifier (the OS trust store *inside the container*), not the
+  # shared-secret handshake — so a bare self-signed CMIS_PEER_TLS=1 cert fails
+  # with `UnknownIssuer`. Instead issue this node's leaf from a CA (supplied
+  # fleet-wide via cmis_peer_ca_cert/_key, else generated locally) and point the
+  # container's verifier at that CA through SSL_CERT_FILE. Active only for a
+  # multi-node cluster that wants peer TLS and did not supply its own leaf pair.
+  $_peer_ca_active = $_cmis_cluster_multinode and $cmis_peer_tls and $cmis_peer_ca_manage and !($cmis_peer_tls_cert and $cmis_peer_tls_key)
+  $_cmis_peer_tls        = $cmis_peer_tls
+  $_cmis_peer_tls_cert   = $cmis_peer_tls_cert
+  $_cmis_peer_tls_key    = $cmis_peer_tls_key
+  $_cmis_peer_ca_cert    = $cmis_peer_ca_cert
+  $_cmis_peer_ca_key     = $cmis_peer_ca_key
+  $_cmis_peer_ca_days    = $cmis_peer_ca_days
+  # The CA cert + this node's leaf live in a dir bind-mounted into the CMIS
+  # container; the CA *private* key (and the CSR/serial scratch files) stay
+  # host-only under the config root and are never mounted.
+  $_peer_tls_dir            = "${config_dir}/peer-tls"
+  $_peer_ca_cert_file       = "${config_dir}/peer-tls/ca.crt"
+  $_peer_cert_file          = "${config_dir}/peer-tls/peer.crt"
+  $_peer_key_file           = "${config_dir}/peer-tls/peer.key"
+  $_peer_ca_key_file        = "${config_dir}/peer-ca.key"
+  $_peer_csr_file           = "${config_dir}/peer-ca.csr"
+  $_peer_serial_file        = "${config_dir}/peer-ca.srl"
+  $_peer_tls_container_dir  = '/etc/ferrogate/peer-tls'
+  $_peer_tls_container_ca   = '/etc/ferrogate/peer-tls/ca.crt'
+  $_peer_tls_container_cert = '/etc/ferrogate/peer-tls/peer.crt'
+  $_peer_tls_container_key  = '/etc/ferrogate/peer-tls/peer.key'
+  # Leaf subject + SANs. rustls checks the advertised name peers dial against the
+  # leaf SAN, so it must be present. Default to the node FQDN (the same name the
+  # CMIS listener CN resolves to); operators add IPs/extra hostnames via
+  # cmis_peer_cert_san (each a raw openssl SAN entry, e.g. 'IP:10.0.0.2').
+  $_peer_ca_cn   = 'FerroGate CMIS Peer CA'
+  $_peer_cert_cn = $_cmis_tls_cert_cn
+  $_peer_san     = (["DNS:${_cmis_tls_cert_cn}"] + $cmis_peer_cert_san).join(',')
   if $cmis_raft_secret {
     $_raft_secret_lines = ["CMIS_RAFT_SECRET=${cmis_raft_secret}"]
   } else {
@@ -432,6 +510,15 @@ class ferrogate (
     $_cmis_peer_tls_lines = [
       "CMIS_PEER_TLS_CERT=${cmis_peer_tls_cert}",
       "CMIS_PEER_TLS_KEY=${cmis_peer_tls_key}",
+    ]
+  } elsif $_peer_ca_active {
+    # Module-issued leaf from a (supplied or generated) CA. SSL_CERT_FILE makes
+    # the container's rustls platform verifier trust that CA, so the split-brain
+    # / metrics client accepts peer leaves issued from it (ferrogate::peer_ca).
+    $_cmis_peer_tls_lines = [
+      "CMIS_PEER_TLS_CERT=${_peer_tls_container_cert}",
+      "CMIS_PEER_TLS_KEY=${_peer_tls_container_key}",
+      "SSL_CERT_FILE=${_peer_tls_container_ca}",
     ]
   } elsif $cmis_peer_tls {
     $_cmis_peer_tls_lines = ['CMIS_PEER_TLS=1']
@@ -486,6 +573,13 @@ class ferrogate (
     contain ferrogate::tls
   }
 
+  # Inter-node (peer) transport CA + this node's leaf, when the managed-CA path
+  # is active (multi-node, peer TLS on, no operator-supplied leaf).
+  if $_peer_ca_active {
+    class { 'ferrogate::peer_ca': }
+    contain ferrogate::peer_ca
+  }
+
   # Host-side operator CLI wrapper. Only useful when CMIS is running, since the
   # `ferrogate` CLI is a gRPC client of CMIS.
   if $cmis_enable {
@@ -509,6 +603,14 @@ class ferrogate (
   if $cmis_enable and $cmis_tls_enable {
     Class['ferrogate::config']
     -> Class['ferrogate::tls']
+    -> Class['ferrogate::service']
+  }
+
+  # The peer-CA material is likewise bind-mounted into the CMIS container, so it
+  # must exist before the service starts. Slot it between config and service.
+  if $_peer_ca_active {
+    Class['ferrogate::config']
+    -> Class['ferrogate::peer_ca']
     -> Class['ferrogate::service']
   }
 

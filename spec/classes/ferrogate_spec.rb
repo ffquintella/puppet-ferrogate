@@ -365,6 +365,196 @@ describe 'ferrogate' do
     # cleanly here), so that rejection is not asserted in this suite.
   end
 
+  context 'CMIS HA — managed peer CA (default for a multi-node cluster)' do
+    let(:facts) { BASE_FACTS }
+    let(:params) do
+      {
+        cmis_cluster_peers: {
+          1 => { 'raft_addr' => '10.0.0.1:9601', 'api_addr' => '10.0.0.1:9602' },
+          2 => { 'raft_addr' => '10.0.0.2:9601', 'api_addr' => '10.0.0.2:9602' },
+        },
+        cmis_node_id:     1,
+        cmis_raft_secret: 'a-shared-raft-secret-16+',
+        cmis_api_secret:  'a-shared-api-secret-16++',
+      }
+    end
+
+    it { is_expected.to compile }
+
+    it 'declares the peer_ca class' do
+      is_expected.to contain_class('ferrogate::peer_ca')
+    end
+
+    it 'creates the bind-mounted peer-tls directory owned by the container-mapped id' do
+      is_expected.to contain_file('/srv/application-config/ferrogate/peer-tls').with(
+        ensure: 'directory',
+        owner:  655_435_536,
+        group:  655_435_536,
+        mode:   '0750',
+      )
+    end
+
+    it 'generates a self-signed P-384 CA (key host-only, cert in the mounted dir)' do
+      is_expected.to contain_exec('ferrogate-peer-ca-genkey')
+        .with_command(%r{openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-384})
+        .with_command(%r{-out /srv/application-config/ferrogate/peer-ca\.key})
+        .with(creates: '/srv/application-config/ferrogate/peer-ca.key')
+      is_expected.to contain_exec('ferrogate-peer-ca-gencert')
+        .with_command(%r{openssl req -x509 -key /srv/application-config/ferrogate/peer-ca\.key})
+        .with_command(%r{-out /srv/application-config/ferrogate/peer-tls/ca\.crt})
+        .with_command(%r{basicConstraints=critical,CA:TRUE})
+        .with(creates: '/srv/application-config/ferrogate/peer-tls/ca.crt')
+    end
+
+    it 'keeps the CA private key host-only (0600) and the CA cert mounted/readable' do
+      is_expected.to contain_file('/srv/application-config/ferrogate/peer-ca.key').with(
+        owner: 'ferrogate',
+        mode:  '0600',
+      )
+      is_expected.to contain_file('/srv/application-config/ferrogate/peer-tls/ca.crt').with(
+        owner: 655_435_536,
+        mode:  '0644',
+      )
+    end
+
+    it 'issues this node leaf from the CA with the FQDN CN and a matching SAN' do
+      is_expected.to contain_exec('ferrogate-peer-genkey')
+        .with(creates: '/srv/application-config/ferrogate/peer-tls/peer.key')
+      is_expected.to contain_exec('ferrogate-peer-gencert')
+        .with_command(%r{-subj '/CN=cmis\.ferrogate\.internal'})
+        .with_command(%r{subjectAltName=DNS:cmis\.ferrogate\.internal})
+        .with_command(%r{openssl x509 -req .* -CA /srv/application-config/ferrogate/peer-tls/ca\.crt})
+        .with(creates: '/srv/application-config/ferrogate/peer-tls/peer.crt')
+    end
+
+    it 'manages the leaf cert and key owned by the container-mapped id' do
+      is_expected.to contain_file('/srv/application-config/ferrogate/peer-tls/peer.crt').with(
+        owner: 655_435_536,
+        mode:  '0640',
+      )
+      is_expected.to contain_file('/srv/application-config/ferrogate/peer-tls/peer.key').with(
+        owner: 655_435_536,
+        mode:  '0640',
+      )
+    end
+
+    it 'bind-mounts the peer-tls directory into the cmis container' do
+      is_expected.to contain_ferrogate__instance('cmis').with(
+        volumes: [
+          '/srv/application-logs/ferrogate:/opt/ferrogate/logs',
+          '/srv/application-data/ferrogate/audit:/var/lib/ferrogate/audit',
+          '/srv/application-data/ferrogate/raft:/var/lib/ferrogate/raft',
+          '/srv/application-data/ferrogate/issuer:/var/lib/ferrogate/issuer',
+          '/srv/application-config/ferrogate/tls:/etc/ferrogate/tls',
+          '/srv/application-config/ferrogate/peer-tls:/etc/ferrogate/peer-tls',
+        ],
+      )
+    end
+
+    # NOTE: the cmis.env CMIS_PEER_TLS_CERT/_KEY + SSL_CERT_FILE lines are rendered
+    # by the EPP template whose conditional/loop blocks the Artichoke test
+    # evaluator does not render faithfully; that env content is asserted in
+    # acceptance. The path wiring is exercised via the bind mount above.
+
+    context 'with extra subjectAltName entries' do
+      let(:params) do
+        {
+          cmis_cluster_peers: { 1 => { 'raft_addr' => '10.0.0.1:9601', 'api_addr' => '10.0.0.1:9602' } },
+          cmis_node_id:       1,
+          cmis_raft_secret:   'a-shared-raft-secret-16+',
+          cmis_api_secret:    'a-shared-api-secret-16++',
+          cmis_peer_cert_san: ['DNS:cmis1.example.com', 'IP:10.0.0.1'],
+        }
+      end
+
+      # NOTE: the SAN list is `.join(',')`-ed in real Puppet; the Artichoke test
+      # evaluator renders the array bracketed instead (see the engine-limits
+      # note), so assert each token is present rather than the joined string.
+      it 'includes the FQDN SAN plus the extra entries' do
+        is_expected.to contain_exec('ferrogate-peer-gencert')
+          .with_command(%r{subjectAltName=.*DNS:cmis\.ferrogate\.internal})
+          .with_command(%r{DNS:cmis1\.example\.com})
+          .with_command(%r{IP:10\.0\.0\.1})
+      end
+    end
+
+    context 'with a supplied fleet-wide CA' do
+      let(:params) do
+        {
+          cmis_cluster_peers: { 1 => { 'raft_addr' => '10.0.0.1:9601', 'api_addr' => '10.0.0.1:9602' } },
+          cmis_node_id:       1,
+          cmis_raft_secret:   'a-shared-raft-secret-16+',
+          cmis_api_secret:    'a-shared-api-secret-16++',
+          cmis_peer_ca_cert:  "-----BEGIN CERTIFICATE-----\nCA\n-----END CERTIFICATE-----\n",
+          cmis_peer_ca_key:   "-----BEGIN PRIVATE KEY-----\nK\n-----END PRIVATE KEY-----\n",
+        }
+      end
+
+      it 'writes the CA verbatim instead of generating one' do
+        is_expected.not_to contain_exec('ferrogate-peer-ca-genkey')
+        is_expected.not_to contain_exec('ferrogate-peer-ca-gencert')
+        is_expected.to contain_file('/srv/application-config/ferrogate/peer-ca.key')
+          .with_content(%r{BEGIN PRIVATE KEY}).with(owner: 'ferrogate', mode: '0600')
+        is_expected.to contain_file('/srv/application-config/ferrogate/peer-tls/ca.crt')
+          .with_content(%r{BEGIN CERTIFICATE}).with(owner: 655_435_536, mode: '0644')
+      end
+
+      it 'still issues this node leaf from the supplied CA' do
+        is_expected.to contain_exec('ferrogate-peer-gencert')
+          .that_requires('File[/srv/application-config/ferrogate/peer-tls/ca.crt]')
+      end
+    end
+
+    context 'with cmis_peer_ca_manage => false (bare self-signed transport)' do
+      let(:params) do
+        {
+          cmis_cluster_peers:  { 1 => { 'raft_addr' => '10.0.0.1:9601', 'api_addr' => '10.0.0.1:9602' } },
+          cmis_node_id:        1,
+          cmis_raft_secret:    'a-shared-raft-secret-16+',
+          cmis_api_secret:     'a-shared-api-secret-16++',
+          cmis_peer_ca_manage: false,
+        }
+      end
+
+      it 'does not declare the peer_ca class' do
+        is_expected.to compile
+        is_expected.not_to contain_class('ferrogate::peer_ca')
+      end
+    end
+
+    context 'with an operator-supplied leaf (operator owns trust)' do
+      let(:params) do
+        {
+          cmis_cluster_peers: { 1 => { 'raft_addr' => '10.0.0.1:9601', 'api_addr' => '10.0.0.1:9602' } },
+          cmis_node_id:       1,
+          cmis_raft_secret:   'a-shared-raft-secret-16+',
+          cmis_api_secret:    'a-shared-api-secret-16++',
+          cmis_peer_tls_cert: '/etc/ferrogate/tls/peer.crt',
+          cmis_peer_tls_key:  '/etc/ferrogate/tls/peer.key',
+        }
+      end
+
+      it 'does not declare the peer_ca class' do
+        is_expected.to compile
+        is_expected.not_to contain_class('ferrogate::peer_ca')
+      end
+    end
+
+    context 'rejects a half-supplied CA pair' do
+      let(:params) do
+        {
+          cmis_cluster_peers: { 1 => { 'raft_addr' => '10.0.0.1:9601', 'api_addr' => '10.0.0.1:9602' } },
+          cmis_node_id:       1,
+          cmis_raft_secret:   'a-shared-raft-secret-16+',
+          cmis_api_secret:    'a-shared-api-secret-16++',
+          cmis_peer_ca_cert:  "-----BEGIN CERTIFICATE-----\nX\n-----END CERTIFICATE-----\n",
+        }
+      end
+
+      it { is_expected.to compile.and_raise_error(%r{cmis_peer_ca_cert and cmis_peer_ca_key together}) }
+    end
+  end
+
   context 'CMIS TLS with a supplied certificate' do
     let(:facts) { BASE_FACTS }
     let(:params) do
