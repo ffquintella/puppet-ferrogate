@@ -81,6 +81,13 @@
 #   Deploy the CMIS (Central Machine Identity Service) instance.
 # @param cmis_listen
 #   `CMIS_LISTEN` socket address inside the container.
+# @param cmis_trust_domain
+#   `CMIS_TRUST_DOMAIN` — the SPIFFE trust domain CMIS stamps into the SVIDs and
+#   allowlists it issues (e.g. `'ferrogate.prod'`). `undef` (the default) leaves
+#   the var unset, so the binary falls back to its built-in `ferrogate.dev`.
+#   **Must stay constant for a given issuer seed**: changing it after a cluster
+#   has established its seed re-scopes every issued identity, so set it once at
+#   bring-up and treat it as immutable thereafter.
 # @param cmis_port
 #   Host port published for CMIS (mapped to `cmis_container_port`).
 # @param cmis_container_port
@@ -286,6 +293,7 @@ class ferrogate (
   String[1]                        $rust_log           = 'info',
   Boolean                          $cmis_enable        = true,
   String[1]                        $cmis_listen        = '0.0.0.0:8443',
+  Optional[String[1]]              $cmis_trust_domain  = undef,
   Stdlib::Port                     $cmis_port          = 8443,
   Stdlib::Port                     $cmis_container_port = 8443,
   Enum['off', 'bootstrap', 'always'] $cmis_allowlist_proposals = 'bootstrap',
@@ -416,6 +424,15 @@ class ferrogate (
   $_rust_log           = $rust_log
   $_cmis_enable        = $cmis_enable
   $_cmis_listen        = $cmis_listen
+  # Build the CMIS_TRUST_DOMAIN env line here (not via an EPP conditional) so an
+  # unset value renders to '' — leaving the var out entirely so the binary keeps
+  # its built-in default. MUST stay constant for a given issuer seed: the kid
+  # resolves the key, the trust domain scopes it.
+  if $cmis_trust_domain =~ Undef {
+    $_cmis_trust_domain_line = ''
+  } else {
+    $_cmis_trust_domain_line = "# SPIFFE trust domain stamped into issued SVIDs / allowlists.\nCMIS_TRUST_DOMAIN=${cmis_trust_domain}"
+  }
   $_cmis_port          = $cmis_port
   $_cmis_container_port = $cmis_container_port
   $_cmis_allowlist_proposals = $cmis_allowlist_proposals

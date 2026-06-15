@@ -266,6 +266,24 @@ describe 'ferrogate' do
     end
   end
 
+  context 'cmis_trust_domain' do
+    let(:facts) { BASE_FACTS }
+
+    it 'leaves CMIS_TRUST_DOMAIN unset by default (binary keeps ferrogate.dev)' do
+      is_expected.to contain_file('/srv/application-config/ferrogate/cmis.env')
+        .without_content(%r{CMIS_TRUST_DOMAIN})
+    end
+
+    context 'set to a production trust domain' do
+      let(:params) { { cmis_trust_domain: 'ferrogate.prod' } }
+
+      it 'renders CMIS_TRUST_DOMAIN into the cmis env file' do
+        is_expected.to contain_file('/srv/application-config/ferrogate/cmis.env')
+          .with_content(%r{CMIS_TRUST_DOMAIN=ferrogate\.prod})
+      end
+    end
+  end
+
   context 'CMIS HA — single-node cluster (default)' do
     let(:facts) { BASE_FACTS }
 

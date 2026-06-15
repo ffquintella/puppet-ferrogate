@@ -4,6 +4,19 @@ All notable changes to this module are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this module
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-06-15
+
+### Added
+- **`cmis_trust_domain` — manage `CMIS_TRUST_DOMAIN` as a first-class
+  parameter.** CMIS stamps a SPIFFE trust domain into every SVID and allowlist
+  it issues (the binary reads `CMIS_TRUST_DOMAIN`, falling back to its built-in
+  `ferrogate.dev`). Previously this could only be set through the generic
+  `extra_env` escape hatch; it now has its own parameter. `undef` (the default)
+  leaves the var unset so the binary keeps its default — existing deployments
+  are unaffected. **Must stay constant for a given issuer seed**: set it once at
+  bring-up (e.g. `'ferrogate.prod'`) and treat it as immutable, since changing
+  it re-scopes every issued identity.
+
 ## [0.5.0] - 2026-06-11
 
 ### Added
