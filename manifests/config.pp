@@ -86,6 +86,7 @@ class ferrogate::config {
           'tls_key'             => $tls_key,
           'allowlist_proposals' => $ferrogate::_cmis_allowlist_proposals,
           'trust_domain_line'   => $ferrogate::_cmis_trust_domain_line,
+          'ttl_env'             => $ferrogate::_cmis_ttl_env,
           'ha_env'              => $ferrogate::_cmis_ha_env,
           'extra_env'           => $ferrogate::_extra_env,
       }),

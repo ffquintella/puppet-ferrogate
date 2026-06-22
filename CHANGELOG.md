@@ -4,6 +4,27 @@ All notable changes to this module are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this module
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.2] - 2026-06-22
+
+### Added
+- **Operator-tunable CMIS signature lifetimes (FerroGate ≥ 0.19.12).** CMIS
+  0.19.12 made the SVID and caller-allowlist TTLs configurable (previously
+  hardcoded), reading `CMIS_SVID_TTL_SECS` (default 30 days) and
+  `CMIS_ALLOWLIST_TTL_SECS` (default 96 h) and clamping each to a `[96 h, 30 d]`
+  window. The module now exposes both as first-class parameters:
+  - `cmis_svid_ttl_secs` — `CMIS_SVID_TTL_SECS`, the lifetime of issued SVIDs.
+  - `cmis_allowlist_ttl_secs` — `CMIS_ALLOWLIST_TTL_SECS`, the validity window
+    of signed caller-allowlists.
+
+  Both default to `undef`, leaving the var unset so the binary keeps its
+  built-in default — existing deployments are unaffected. The parameter type
+  (`Integer[345600, 2592000]`) enforces the same `[96 h, 30 d]` range at catalog
+  compile, so an out-of-range value fails fast instead of being silently
+  clamped. **`cmis_allowlist_ttl_secs` must not exceed the MIA's
+  `allowlist.max_age_secs`** (`FERROGATE_ALLOWLIST_MAX_AGE_SECS`, also 96 h by
+  default), or a freshly signed list is rejected by the consumer as stale —
+  raise both together if you lengthen it.
+
 ## [0.6.1] - 2026-06-15
 
 ### Added

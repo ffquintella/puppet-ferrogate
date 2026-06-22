@@ -104,6 +104,21 @@
 #     for review.
 #   - `'always'` — auto-adopt every accepted proposal, including changes to an
 #     existing allowlist. Most convenient, weakest.
+# @param cmis_svid_ttl_secs
+#   `CMIS_SVID_TTL_SECS` (CMIS ≥ 0.19.12) — lifetime, in seconds, of the SVIDs
+#   CMIS issues. `undef` (the default) leaves the var unset so the binary keeps
+#   its built-in default of 30 days. The binary floors the value at 96 h and
+#   caps it at 30 days; this parameter's type (`Integer[345600, 2592000]`)
+#   enforces the same `[96 h, 30 d]` window at catalog compile so an
+#   out-of-range value fails fast rather than being silently clamped.
+# @param cmis_allowlist_ttl_secs
+#   `CMIS_ALLOWLIST_TTL_SECS` (CMIS ≥ 0.19.12) — validity window, in seconds, of
+#   the signed caller-allowlists CMIS issues. `undef` (the default) leaves the
+#   var unset so the binary keeps its built-in default of 96 h. Same
+#   `[96 h, 30 d]` range as `cmis_svid_ttl_secs`. **Must not exceed the MIA's
+#   `allowlist.max_age_secs`** (`FERROGATE_ALLOWLIST_MAX_AGE_SECS`, also 96 h by
+#   default) — a freshly signed list older than the consumer's window is
+#   rejected as stale, so raise both together if you lengthen it.
 # @param cmis_cluster_peers
 #   CMIS High Availability (F05) — the Raft peer set this node belongs to. CMIS
 #   keeps every durable store (issued SVIDs, host allowlists, pending allowlist
@@ -297,6 +312,8 @@ class ferrogate (
   Stdlib::Port                     $cmis_port          = 8443,
   Stdlib::Port                     $cmis_container_port = 8443,
   Enum['off', 'bootstrap', 'always'] $cmis_allowlist_proposals = 'bootstrap',
+  Optional[Integer[345600, 2592000]] $cmis_svid_ttl_secs      = undef,
+  Optional[Integer[345600, 2592000]] $cmis_allowlist_ttl_secs = undef,
   Hash[Integer[1], Struct[{
       'raft_addr' => String[1],
       'api_addr'  => String[1],
@@ -436,6 +453,26 @@ class ferrogate (
   $_cmis_port          = $cmis_port
   $_cmis_container_port = $cmis_container_port
   $_cmis_allowlist_proposals = $cmis_allowlist_proposals
+  # Signature lifetimes (CMIS ≥ 0.19.12). Pre-render the env lines here (not via
+  # an EPP conditional) so an unset value renders to '' — leaving the var out so
+  # the binary keeps its default (SVID 30 d, allowlist 96 h). Both default unset.
+  if $cmis_svid_ttl_secs =~ Undef and $cmis_allowlist_ttl_secs =~ Undef {
+    $_cmis_ttl_env = ''
+  } else {
+    $_cmis_svid_ttl_line = $cmis_svid_ttl_secs ? {
+      undef   => [],
+      default => ["CMIS_SVID_TTL_SECS=${cmis_svid_ttl_secs}"],
+    }
+    $_cmis_allowlist_ttl_line = $cmis_allowlist_ttl_secs ? {
+      undef   => [],
+      default => ["CMIS_ALLOWLIST_TTL_SECS=${cmis_allowlist_ttl_secs}"],
+    }
+    $_cmis_ttl_env = (
+      ['# Signature lifetimes (seconds): SVID + caller-allowlist validity windows.']
+      + $_cmis_svid_ttl_line
+      + $_cmis_allowlist_ttl_line
+    ).join("\n")
+  }
   # CMIS HA: render the peer set as CMIS_CLUSTER_PEERS' `id=raft,api;...` form.
   # Iterate the sorted key array (not a two-arg hash lambda) for a deterministic
   # spec the test evaluator can render. Empty hash ⇒ '' ⇒ single-node cluster.

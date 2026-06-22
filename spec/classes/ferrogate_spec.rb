@@ -284,6 +284,61 @@ describe 'ferrogate' do
     end
   end
 
+  context 'CMIS signature lifetimes (TTLs)' do
+    let(:facts) { BASE_FACTS }
+
+    it 'leaves both TTL vars unset by default (binary keeps 30 d / 96 h)' do
+      is_expected.to contain_file('/srv/application-config/ferrogate/cmis.env')
+        .without_content(%r{CMIS_SVID_TTL_SECS})
+      is_expected.to contain_file('/srv/application-config/ferrogate/cmis.env')
+        .without_content(%r{CMIS_ALLOWLIST_TTL_SECS})
+    end
+
+    context 'with cmis_svid_ttl_secs set' do
+      let(:params) { { cmis_svid_ttl_secs: 604_800 } }
+
+      it 'renders CMIS_SVID_TTL_SECS but not the allowlist TTL' do
+        is_expected.to contain_file('/srv/application-config/ferrogate/cmis.env')
+          .with_content(%r{CMIS_SVID_TTL_SECS=604800})
+          .without_content(%r{CMIS_ALLOWLIST_TTL_SECS})
+      end
+    end
+
+    context 'with cmis_allowlist_ttl_secs set' do
+      let(:params) { { cmis_allowlist_ttl_secs: 604_800 } }
+
+      it 'renders CMIS_ALLOWLIST_TTL_SECS but not the SVID TTL' do
+        is_expected.to contain_file('/srv/application-config/ferrogate/cmis.env')
+          .with_content(%r{CMIS_ALLOWLIST_TTL_SECS=604800})
+          .without_content(%r{CMIS_SVID_TTL_SECS})
+      end
+    end
+
+    context 'with both TTLs set' do
+      let(:params) do
+        { cmis_svid_ttl_secs: 2_592_000, cmis_allowlist_ttl_secs: 345_600 }
+      end
+
+      it 'renders both lines' do
+        is_expected.to contain_file('/srv/application-config/ferrogate/cmis.env')
+          .with_content(%r{CMIS_SVID_TTL_SECS=2592000})
+          .with_content(%r{CMIS_ALLOWLIST_TTL_SECS=345600})
+      end
+    end
+
+    context 'with a TTL below the 96 h floor' do
+      let(:params) { { cmis_svid_ttl_secs: 3600 } }
+
+      it { is_expected.to compile.and_raise_error(%r{cmis_svid_ttl_secs}) }
+    end
+
+    context 'with a TTL above the 30 d cap' do
+      let(:params) { { cmis_allowlist_ttl_secs: 2_592_001 } }
+
+      it { is_expected.to compile.and_raise_error(%r{cmis_allowlist_ttl_secs}) }
+    end
+  end
+
   context 'CMIS HA — single-node cluster (default)' do
     let(:facts) { BASE_FACTS }
 
