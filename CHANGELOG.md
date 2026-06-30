@@ -4,6 +4,35 @@ All notable changes to this module are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this module
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-06-30
+
+### Added
+- **Windows support for the standalone MIA host agent (`ferrogate::mia`).** The
+  class is now cross-platform. On Windows it installs the `ferrogate-mia`
+  Chocolatey package (`provider => chocolatey`), writes its config file to
+  `C:/ProgramData/ferrogate/mia.env`, and manages the bundled service via the
+  native `windows` provider. The existing RedHat/Debian behaviour (RPM/DEB +
+  systemd `EnvironmentFile`) is unchanged.
+  - `config_dir` now defaults to `undef`, resolving to `/etc/ferrogate` on Linux
+    and `C:/ProgramData/ferrogate` on Windows (explicit values still honoured).
+  - `manage_repo => true` registers a **custom Chocolatey source** (private
+    NuGet feed) on Windows — the package's `repo_baseurl` becomes the source
+    `location`, with new `repo_user` / `repo_password` / `repo_priority`
+    parameters for authenticated feeds. RedHat (`yumrepo`) and Debian (apt
+    source list) behaviour is unchanged.
+  - The hardening-profile knobs (`seccomp`, `ima_log`, `require_ima`,
+    `skip_hardening`, `run_as_uid`/`run_as_gid`) and the Unix-socket
+    `helper_socket` default are Linux-only; the inapplicable Unix-socket default
+    is dropped on Windows.
+
+### Dependencies
+- Added `puppetlabs/chocolatey` (`>= 5.0.0 < 9.0.0`) — supplies the `chocolatey`
+  package provider and the `chocolateysource` type used on Windows.
+
+### Compatibility
+- `metadata.json` `operatingsystem_support` now lists Windows (2019, 2022, 10,
+  11) for the MIA host agent.
+
 ## [0.6.2] - 2026-06-22
 
 ### Added

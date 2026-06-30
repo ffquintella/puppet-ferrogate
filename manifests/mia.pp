@@ -4,8 +4,8 @@
 # *client*. Unlike the container-based `mia_enable` switch on the main
 # `ferrogate` class (which runs MIA inside the server image — see its caveats),
 # this class deploys MIA the way FerroGate actually ships it: as a native host
-# OS package (`ferrogate-mia`) that drops a static `/usr/bin/mia` binary, a
-# `mia` systemd unit, and the config templates under `/etc/ferrogate/`.
+# package that drops a static `mia` binary, a service unit, and the config
+# templates under the platform config directory.
 #
 # It can be declared on its own, on any host that needs an agent — with **no**
 # dependency on the `ferrogate` server class, `baseapp`, a container runtime, or
@@ -25,42 +25,70 @@
 #     allowlist_key  => '/etc/ferrogate/allowlist.pub',
 #   }
 #
-# The package must be reachable through the node's existing package repositories
-# (this class installs it but does not configure a repo, mirroring how the
-# server class treats the container runtime). MIA is configured entirely through
-# the systemd `EnvironmentFile` this class renders at `<config_dir>/mia.env`;
-# every `FERROGATE_*` / `RUST_LOG` variable overrides the optional TOML file.
+# ## Platform support
+#
+# On the **RedHat** and **Debian** families the package is an RPM/DEB installed
+# through the node's package manager, the config file is a systemd
+# `EnvironmentFile`, and the unit is managed via `systemd`.
+#
+# On **Windows** the package is a Chocolatey `.nupkg` (`provider => chocolatey`),
+# the config file is written to disk as `KEY=VALUE` lines under
+# `C:/ProgramData/ferrogate/mia.env`, and the bundled Windows service is managed
+# via the native `windows` provider. Setting `manage_repo => true` on Windows
+# registers a **custom Chocolatey source** (your private NuGet feed) the package
+# is pulled from — see `repo_baseurl` / `repo_user` / `repo_password`. The
+# `puppetlabs/chocolatey` module supplies the `chocolatey` provider and the
+# `chocolateysource` type and must be present on the node.
+#
+# The package must be reachable through the node's existing package
+# repositories / Chocolatey sources (this class can optionally add a custom one
+# via `manage_repo`, mirroring how the server class treats the container
+# runtime). MIA is configured entirely through the config file this class
+# renders at `<config_dir>/mia.env`; every `FERROGATE_*` / `RUST_LOG` variable
+# overrides the optional TOML file.
 #
 # @param package_name
-#   Name of the MIA OS package.
+#   Name of the MIA package. On Windows this is the Chocolatey package id.
 # @param package_ensure
 #   `ensure` for the package (`'installed'`, a pinned version, `'latest'`, …).
 # @param manage_package
 #   Whether to manage the package. Set `false` if another module owns it.
 # @param manage_repo
-#   Whether to add a custom `ferrogate-mia` package repository before installing.
+#   Whether to add a custom package repository before installing.
 #   **Defaults to `false`** — the package is assumed reachable through the node's
 #   existing repositories. When `true`, `repo_baseurl` is required and a repo is
 #   declared (a `yumrepo` on the RedHat family, an apt source list on the Debian
-#   family) and ordered before the package.
+#   family, a `chocolateysource` / custom NuGet feed on Windows) and ordered
+#   before the package.
 # @param repo_baseurl
 #   Base URL of the custom repository. Required when `manage_repo` is `true`.
-#   RedHat: the `yumrepo` `baseurl`. Debian: the `deb` line URI.
+#   RedHat: the `yumrepo` `baseurl`. Debian: the `deb` line URI. Windows: the
+#   Chocolatey source `location` (the custom NuGet feed URL or path).
 # @param repo_descr
 #   Human-readable repository name/description.
 # @param repo_gpgcheck
-#   Whether to verify package signatures against `repo_gpgkey`.
+#   Whether to verify package signatures against `repo_gpgkey`. RedHat/Debian
+#   only.
 # @param repo_gpgkey
 #   GPG key for signature verification. RedHat: a `gpgkey` URL or local path.
 #   Debian: a local keyring file path used as the source's `signed-by`. When
-#   `undef`, signing is not enforced for the added source.
+#   `undef`, signing is not enforced for the added source. RedHat/Debian only.
 # @param repo_release
 #   Debian only — the suite/codename for the `deb` line. Defaults to the node's
 #   distro codename fact; required when that fact is absent.
 # @param repo_components
 #   Debian only — the components for the `deb` line.
+# @param repo_user
+#   Windows only — username for an authenticated Chocolatey source / NuGet feed.
+#   Passed to `chocolateysource`. `undef` for an anonymous feed.
+# @param repo_password
+#   Windows only — password for an authenticated Chocolatey source / NuGet feed.
+#   Set together with `repo_user`.
+# @param repo_priority
+#   Windows only — priority of the Chocolatey source (lower wins). `undef`
+#   leaves Chocolatey's default.
 # @param service_name
-#   Name of the systemd unit shipped by the package.
+#   Name of the service shipped by the package (systemd unit / Windows service).
 # @param manage_service
 #   Whether to manage the service resource.
 # @param service_ensure
@@ -69,7 +97,8 @@
 #   Whether the service starts at boot.
 # @param config_dir
 #   Directory holding the MIA configuration. The package ships it; managed here
-#   so the env file has a parent on a fresh node.
+#   so the env file has a parent on a fresh node. `undef` (the default) resolves
+#   to `/etc/ferrogate` on Linux and `C:/ProgramData/ferrogate` on Windows.
 # @param manage_config_dir
 #   Whether to manage `config_dir` as a directory.
 # @param rust_log
@@ -86,10 +115,12 @@
 #   `FERROGATE_HELPER_SOCKET` — path to the local helper-API Unix socket. Its
 #   presence is what *enables* the helper API; with none set MIA logs a banner
 #   and exits, so this defaults to the documented `/run/ferrogate/mia.sock`
-#   (systemd provisions `/run/ferrogate`). Set to `undef` to leave it unset.
+#   (systemd provisions `/run/ferrogate`). Set to `undef` to leave it unset. The
+#   Unix-socket default is **Linux-only**: on Windows the helper API uses a named
+#   pipe, so the default is dropped there — set an explicit pipe value if needed.
 # @param helper_socket_mode
 #   `FERROGATE_HELPER_SOCKET_MODE` — octal mode (as a string) for the helper
-#   socket.
+#   socket. Linux only.
 # @param allowlist_path
 #   `FERROGATE_ALLOWLIST` — signed CBOR allowlist of vetted local callers. When
 #   unset the helper API denies every caller (fail closed). When set,
@@ -100,24 +131,27 @@
 # @param allowlist_max_age_secs
 #   `FERROGATE_ALLOWLIST_MAX_AGE_SECS` — maximum accepted allowlist age.
 # @param ima_log
-#   `FERROGATE_IMA_LOG` — override the IMA runtime-measurement log path.
+#   `FERROGATE_IMA_LOG` — override the IMA runtime-measurement log path. Linux
+#   only.
 # @param seccomp
 #   `FERROGATE_SECCOMP` — seccomp mode for staged rollout: `'enforce'`
 #   (default in the agent), `'audit'` (log violations) or `'off'`. Leave `undef`
-#   to take the agent default.
+#   to take the agent default. Linux only.
 # @param require_ima
 #   Maps to `FERROGATE_REQUIRE_IMA`. `false` emits `FERROGATE_REQUIRE_IMA=0`
 #   (do not require enforced IMA — dev/CI only); `true` emits `1`. Leave `undef`
-#   to take the agent default (require IMA).
+#   to take the agent default (require IMA). Linux only.
 # @param skip_hardening
 #   When `true`, set `FERROGATE_SKIP_HARDENING=1` to disable the whole hardening
-#   profile. **Development only** — never in production.
+#   profile. **Development only** — never in production. Linux only.
 # @param run_as_uid
 #   `FERROGATE_RUN_AS_UID` — drop to this UID instead of resolving `_ferrogate`.
+#   Linux only.
 # @param run_as_gid
 #   `FERROGATE_RUN_AS_GID` — drop to this GID instead of resolving `_ferrogate`.
+#   Linux only.
 # @param extra_env
-#   Extra environment variables merged verbatim into the env file.
+#   Extra environment variables merged verbatim into the config file.
 class ferrogate::mia (
   String[1]                       $package_name           = 'ferrogate-mia',
   String[1]                       $package_ensure         = 'installed',
@@ -129,11 +163,14 @@ class ferrogate::mia (
   Optional[String[1]]             $repo_gpgkey            = undef,
   Optional[String[1]]             $repo_release           = undef,
   String[1]                       $repo_components        = 'main',
+  Optional[String[1]]             $repo_user              = undef,
+  Optional[String[1]]             $repo_password          = undef,
+  Optional[Integer[0]]            $repo_priority          = undef,
   String[1]                       $service_name           = 'mia',
   Boolean                         $manage_service         = true,
   Enum['running', 'stopped']      $service_ensure         = 'running',
   Boolean                         $service_enable         = true,
-  Stdlib::Absolutepath            $config_dir             = '/etc/ferrogate',
+  Optional[Stdlib::Absolutepath]  $config_dir             = undef,
   Boolean                         $manage_config_dir      = true,
   String[1]                       $rust_log               = 'info',
   Optional[String[1]]             $cmis_endpoint          = undef,
@@ -157,7 +194,48 @@ class ferrogate::mia (
     fail('ferrogate::mia: allowlist_key is required whenever allowlist_path is set.')
   }
 
-  $env_file = "${config_dir}/mia.env"
+  # --- Resolve platform-specific defaults -----------------------------------
+  # Windows installs from Chocolatey and runs a native Windows service; the
+  # POSIX families install an RPM/DEB and run a systemd unit. The config file is
+  # the same KEY=VALUE surface on every platform (a systemd EnvironmentFile on
+  # Linux, a plain config file read by the agent on Windows).
+  $_windows = $facts['os']['family'] == 'windows'
+
+  if $config_dir {
+    $_config_dir = $config_dir
+  } elsif $_windows {
+    $_config_dir = 'C:/ProgramData/ferrogate'
+  } else {
+    $_config_dir = '/etc/ferrogate'
+  }
+  $env_file = "${_config_dir}/mia.env"
+
+  if $_windows {
+    # Windows file ACLs/modes differ from POSIX; let the resources default
+    # rather than forcing a root:root 0640 that does not apply.
+    $_owner            = undef
+    $_group            = undef
+    $_dir_mode         = undef
+    $_file_mode        = undef
+    $_service_provider = 'windows'
+    $_package_provider = 'chocolatey'
+  } else {
+    $_owner            = 'root'
+    $_group            = 'root'
+    $_dir_mode         = '0755'
+    $_file_mode        = '0640'
+    $_service_provider = 'systemd'
+    $_package_provider = undef
+  }
+
+  # The helper-API default (`/run/ferrogate/mia.sock`) is a Unix socket; on
+  # Windows the helper API is a named pipe, so drop the inapplicable Unix
+  # default there (an explicit value is still honoured).
+  if $_windows and $helper_socket == '/run/ferrogate/mia.sock' {
+    $_helper_socket = undef
+  } else {
+    $_helper_socket = $helper_socket
+  }
 
   # --- Optional custom package repository (off by default) ------------------
   if $manage_repo {
@@ -217,6 +295,20 @@ class ferrogate::mia (
           Exec['ferrogate-mia-apt-update'] -> Package[$package_name]
         }
       }
+      'windows': {
+        # Register a custom Chocolatey source (private NuGet feed) the package is
+        # pulled from. Requires the puppetlabs/chocolatey module for the type.
+        chocolateysource { 'ferrogate-mia':
+          ensure   => present,
+          location => $repo_baseurl,
+          user     => $repo_user,
+          password => $repo_password,
+          priority => $repo_priority,
+        }
+        if $manage_package {
+          Chocolateysource['ferrogate-mia'] -> Package[$package_name]
+        }
+      }
       default: {
         fail("ferrogate::mia: manage_repo is not supported on os family '${facts['os']['family']}'.")
       }
@@ -225,33 +317,35 @@ class ferrogate::mia (
 
   if $manage_package {
     package { $package_name:
-      ensure => $package_ensure,
+      ensure   => $package_ensure,
+      provider => $_package_provider,
     }
   }
 
   if $manage_config_dir {
-    file { $config_dir:
+    file { $_config_dir:
       ensure => directory,
-      owner  => 'root',
-      group  => 'root',
-      mode   => '0755',
+      owner  => $_owner,
+      group  => $_group,
+      mode   => $_dir_mode,
     }
   }
 
-  # systemd EnvironmentFile read by the shipped `mia` unit
-  # (EnvironmentFile=-/etc/ferrogate/mia.env). Env vars override the optional
-  # TOML, so this single file is the authoritative, unattended-provisioning
+  # systemd EnvironmentFile read by the shipped `mia` unit on Linux
+  # (EnvironmentFile=-/etc/ferrogate/mia.env), or the plain KEY=VALUE config
+  # file the agent reads on Windows. Env vars override the optional TOML, so
+  # this single file is the authoritative, unattended-provisioning
   # configuration surface.
   file { $env_file:
     ensure  => file,
-    owner   => 'root',
-    group   => 'root',
-    mode    => '0640',
+    owner   => $_owner,
+    group   => $_group,
+    mode    => $_file_mode,
     content => epp('ferrogate/mia-client.env.epp', {
         'rust_log'               => $rust_log,
         'cmis_endpoint'          => $cmis_endpoint,
         'cmis_spki_pin'          => $cmis_spki_pin,
-        'helper_socket'          => $helper_socket,
+        'helper_socket'          => $_helper_socket,
         'helper_socket_mode'     => $helper_socket_mode,
         'allowlist_path'         => $allowlist_path,
         'allowlist_key'          => $allowlist_key,
@@ -267,7 +361,7 @@ class ferrogate::mia (
   }
 
   if $manage_config_dir {
-    File[$config_dir] -> File[$env_file]
+    File[$_config_dir] -> File[$env_file]
   }
   if $manage_package {
     Package[$package_name] -> File[$env_file]
@@ -277,7 +371,7 @@ class ferrogate::mia (
     service { $service_name:
       ensure    => $service_ensure ? { 'running' => 'running', default => 'stopped' },
       enable    => $service_enable,
-      provider  => 'systemd',
+      provider  => $_service_provider,
       subscribe => File[$env_file],
     }
     if $manage_package {

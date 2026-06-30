@@ -142,6 +142,73 @@ describe 'ferrogate::mia' do
     end
   end
 
+  # --- Windows (Chocolatey .nupkg) -----------------------------------------
+  WINDOWS_FACTS = {
+    os: {
+      family:  'windows',
+      name:    'windows',
+      release: { major: '2022', full: '10.0.20348' },
+    },
+  }.freeze
+
+  context 'on Windows with defaults' do
+    let(:facts) { WINDOWS_FACTS }
+
+    it { is_expected.to compile }
+
+    it 'installs the MIA package via the chocolatey provider' do
+      is_expected.to contain_package('ferrogate-mia').with(
+        ensure:   'installed',
+        provider: 'chocolatey',
+      )
+    end
+
+    it 'manages the Windows config directory under ProgramData' do
+      is_expected.to contain_file('C:/ProgramData/ferrogate').with(ensure: 'directory')
+    end
+
+    it 'writes the config file on disk' do
+      is_expected.to contain_file('C:/ProgramData/ferrogate/mia.env').with(ensure: 'file')
+    end
+
+    it 'manages the service via the windows provider' do
+      is_expected.to contain_service('mia').with(
+        ensure:   'running',
+        enable:   true,
+        provider: 'windows',
+      )
+    end
+
+    it 'drops the inapplicable Unix helper-socket default' do
+      is_expected.to contain_file('C:/ProgramData/ferrogate/mia.env')
+        .without_content(%r{FERROGATE_HELPER_SOCKET=})
+    end
+  end
+
+  context 'on Windows with a custom Chocolatey source (NuGet feed)' do
+    let(:facts) { WINDOWS_FACTS }
+    let(:params) do
+      {
+        manage_repo:   true,
+        repo_baseurl:  'https://nuget.example.com/ferrogate/index.json',
+        repo_user:     'svc-puppet',
+        repo_password: 's3cret',
+        repo_priority: 1,
+      }
+    end
+
+    it { is_expected.to compile }
+
+    it 'registers the custom Chocolatey source' do
+      is_expected.to contain_chocolateysource('ferrogate-mia').with(
+        ensure:   'present',
+        location: 'https://nuget.example.com/ferrogate/index.json',
+        user:     'svc-puppet',
+        priority: 1,
+      )
+    end
+  end
+
   context 'with a custom repo on the Debian family' do
     let(:facts) do
       {

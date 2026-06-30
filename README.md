@@ -259,17 +259,37 @@ class { 'ferrogate::mia':
 }
 ```
 
-The class installs the package, manages `/etc/ferrogate`, renders the systemd
-`EnvironmentFile` at `/etc/ferrogate/mia.env`, and enables/starts the `mia`
-service. MIA is configured entirely through `FERROGATE_*` env variables; each
-overrides the optional TOML file.
+The class installs the package, manages the config directory, renders the
+config file at `<config_dir>/mia.env`, and enables/starts the `mia` service. MIA
+is configured entirely through `FERROGATE_*` env variables; each overrides the
+optional TOML file.
+
+### Platform support
+
+`ferrogate::mia` is **cross-platform**:
+
+- **RedHat / Debian families** — installs the `ferrogate-mia` RPM/DEB, writes a
+  systemd `EnvironmentFile` at `/etc/ferrogate/mia.env`, and manages the `mia`
+  unit via `systemd`.
+- **Windows** — installs the `ferrogate-mia` Chocolatey package
+  (`provider => chocolatey`), writes the config file to
+  `C:/ProgramData/ferrogate/mia.env`, and manages the bundled Windows service.
+  The hardening-profile knobs (`seccomp`, `ima_log`, `require_ima`,
+  `skip_hardening`, `run_as_uid`/`run_as_gid`) and the Unix-socket helper default
+  are Linux-only; on Windows the helper API uses a named pipe (set `helper_socket`
+  explicitly if you need it). Requires the
+  [`puppetlabs/chocolatey`](https://forge.puppet.com/puppetlabs/chocolatey)
+  module on the node (it supplies the `chocolatey` provider and
+  `chocolateysource` type).
 
 By default the package is assumed reachable through the node's existing
-repositories. To add a custom `ferrogate-mia` repository, set
-`manage_repo => true` and `repo_baseurl` — a `yumrepo` is declared on the RedHat
-family, an apt source list on the Debian family, ordered before the package:
+repositories / Chocolatey sources. To add a custom `ferrogate-mia` repository,
+set `manage_repo => true` and `repo_baseurl` — a `yumrepo` on the RedHat family,
+an apt source list on the Debian family, or a `chocolateysource` (custom NuGet
+feed) on Windows, ordered before the package:
 
 ```puppet
+# RedHat / Debian — RPM/DEB repository
 class { 'ferrogate::mia':
   cmis_endpoint => 'https://cmis.example.com:8443',
   cmis_spki_pin => '5f2e...c4',
@@ -277,15 +297,28 @@ class { 'ferrogate::mia':
   repo_baseurl  => 'https://repo.example.com/ferrogate/el9/x86_64',
   repo_gpgkey   => 'https://repo.example.com/ferrogate/RPM-GPG-KEY',
 }
+
+# Windows — private Chocolatey source (NuGet feed)
+class { 'ferrogate::mia':
+  cmis_endpoint => 'https://cmis.example.com:8443',
+  cmis_spki_pin => '5f2e...c4',
+  manage_repo   => true,
+  repo_baseurl  => 'https://nuget.example.com/ferrogate/index.json',
+  repo_user     => 'svc-puppet',   # optional, for an authenticated feed
+  repo_password => 'feed-secret',  # optional (drive from Hiera/eyaml)
+}
 ```
 
 | Parameter (key ones)   | Default                     | Description                                              |
 | ---------------------- | --------------------------- | -------------------------------------------------------- |
-| `package_name`         | `'ferrogate-mia'`           | MIA OS package.                                          |
+| `package_name`         | `'ferrogate-mia'`           | MIA package (Chocolatey id on Windows).                  |
 | `package_ensure`       | `'installed'`               | `ensure` for the package.                               |
 | `manage_repo`          | `false`                     | Add a custom `ferrogate-mia` repo (needs `repo_baseurl`).|
-| `repo_baseurl`         | `undef`                     | Repository URL (yumrepo `baseurl` / apt `deb` URI).     |
+| `repo_baseurl`         | `undef`                     | Repo URL (yum `baseurl` / apt `deb` URI / Choco source).|
 | `repo_gpgkey`          | `undef`                     | GPG key (RedHat URL/path; Debian `signed-by` keyring).  |
+| `repo_user` / `repo_password` | `undef`              | Windows — auth for the custom Chocolatey source/feed.   |
+| `repo_priority`        | `undef`                     | Windows — priority of the custom Chocolatey source.     |
+| `config_dir`           | OS default                  | `/etc/ferrogate` (Linux) / `C:/ProgramData/ferrogate` (Windows). |
 | `cmis_endpoint`        | `undef`                     | `FERROGATE_CMIS_ENDPOINT` — the CMIS server URL.        |
 | `cmis_spki_pin`        | `undef`                     | `FERROGATE_CMIS_SPKI_PIN` — accepted SPKI pin (SHA-384).|
 | `helper_socket`        | `'/run/ferrogate/mia.sock'` | Helper-API socket; its presence enables the helper API. |
@@ -372,8 +405,10 @@ Key parameters (see the puppet-strings docs in
 
 ## Limitations
 
-- Linux only. Supported on the RedHat and Debian families (see
-  `metadata.json`).
+- The **container server** (`ferrogate` class) is Linux-only — RedHat and Debian
+  families (rootless podman/Quadlet, SELinux, systemd). The standalone
+  [`ferrogate::mia`](#mia-host-agent-ferrogatemia) host agent additionally
+  supports **Windows** via a Chocolatey `.nupkg`. See `metadata.json`.
 - **MIA is not in the standard image.** The published FerroGate image is
   CMIS-only — it ships the `cmis` server and the `ferrogate` CLI, and its
   entrypoint expects the MIA host agent to be installed on each machine from its

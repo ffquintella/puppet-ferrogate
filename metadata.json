@@ -12,9 +12,13 @@
     {
       "name": "puppetlabs/concat",
       "version_requirement": ">= 7.0.0 < 10.0.0"
+    },
+    {
+      "name": "puppetlabs/chocolatey",
+      "version_requirement": ">= 5.0.0 < 9.0.0"
     }
   ],
-  "description": "Deploys FerroGate (CMIS and MIA) as rootless podman (Quadlet) or docker containers, managed by systemd, with SELinux configuration and a dedicated service user. Includes a standalone ferrogate::mia class to install and configure the MIA host agent from its OS package.",
+  "description": "Deploys FerroGate (CMIS and MIA) as rootless podman (Quadlet) or docker containers, managed by systemd, with SELinux configuration and a dedicated service user. Includes a standalone ferrogate::mia class to install and configure the MIA host agent from its OS package (RPM/DEB) or, on Windows, a Chocolatey .nupkg from a custom NuGet feed.",
   "issues_url": "",
   "license": "Apache-2.0",
   "name": "ferrogate",
@@ -42,6 +46,10 @@
     {
       "operatingsystem": "Ubuntu",
       "operatingsystemrelease": ["22.04", "24.04"]
+    },
+    {
+      "operatingsystem": "windows",
+      "operatingsystemrelease": ["2019", "2022", "10", "11"]
     }
   ],
   "project_page": "",
@@ -53,5 +61,5 @@
   ],
   "source": "",
   "summary": "OpenVox module: ferrogate",
-  "version": "0.6.2"
+  "version": "0.7.0"
 }
