@@ -635,9 +635,17 @@ class ferrogate (
   }
 
   # Host-side operator CLI wrapper. Only useful when CMIS is running, since the
-  # `ferrogate` CLI is a gRPC client of CMIS.
+  # `ferrogate` CLI is a gRPC client of CMIS. The wrapper is a static host script
+  # whose write does not require the container to be running, so order it after
+  # `install` (which creates the service user the wrapper sudo's to) rather than
+  # after the whole `service` class — a container-start failure (e.g. an
+  # unsupported MIA image) must not skip the wrapper and its sudoers drop-in.
+  # Declared as a `require` metaparameter (not a `->` chain) so the ordering edge
+  # is materialized in the catalog for both real applies and the test evaluator.
   if $cmis_enable {
-    class { 'ferrogate::cli': }
+    class { 'ferrogate::cli':
+      require => Class['ferrogate::install'],
+    }
     contain ferrogate::cli
   }
 
@@ -668,12 +676,4 @@ class ferrogate (
     -> Class['ferrogate::service']
   }
 
-  # The CLI wrapper is a static host script; writing it does not require the
-  # container to be running. Order it after `install` (which creates the service
-  # user the wrapper sudo's to) rather than after the whole `service` class, so a
-  # container-start failure (e.g. an unsupported MIA image) cannot skip the
-  # wrapper and the sudoers drop-in.
-  if $cmis_enable {
-    Class['ferrogate::install'] -> Class['ferrogate::cli']
-  }
 }

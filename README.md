@@ -259,10 +259,21 @@ class { 'ferrogate::mia':
 }
 ```
 
-The class installs the package, manages the config directory, renders the
-config file at `<config_dir>/mia.env`, and enables/starts the `mia` service. MIA
-is configured entirely through `FERROGATE_*` env variables; each overrides the
-optional TOML file.
+The class installs the package, creates the `_ferrogate` privilege-drop account
+the daemon needs, renders **both** config surfaces, and enables/starts the `mia`
+service:
+
+- `<config_dir>/mia.env` — the systemd `EnvironmentFile` the **service** loads.
+  It carries everything, including the hardening/runtime toggles that have no
+  TOML equivalent (`seccomp`, `require_ima`, `run_as_*`, `extra_env`).
+- `<config_dir>/mia.toml` — the config file `mia` reads **directly**. Interactive
+  commands such as `mia test` do *not* inherit the service's `EnvironmentFile`,
+  so without this file they read the empty packaged template and fail even when
+  the service is healthy. Rendered from the same parameters (set
+  `manage_toml => false` to skip it).
+
+MIA's precedence is `defaults < mia.toml < FERROGATE_* env`, so the two files
+stay consistent and the env file still wins for the running daemon.
 
 ### Platform support
 
@@ -319,6 +330,8 @@ class { 'ferrogate::mia':
 | `repo_user` / `repo_password` | `undef`              | Windows — auth for the custom Chocolatey source/feed.   |
 | `repo_priority`        | `undef`                     | Windows — priority of the custom Chocolatey source.     |
 | `config_dir`           | OS default                  | `/etc/ferrogate` (Linux) / `C:/ProgramData/ferrogate` (Windows). |
+| `manage_toml`          | `true`                      | Also render `<config_dir>/mia.toml` so `mia test` works.|
+| `manage_user`          | `true`                      | Create the `_ferrogate` privilege-drop account (Linux). |
 | `cmis_endpoint`        | `undef`                     | `FERROGATE_CMIS_ENDPOINT` — the CMIS server URL.        |
 | `cmis_spki_pin`        | `undef`                     | `FERROGATE_CMIS_SPKI_PIN` — accepted SPKI pin (SHA-384).|
 | `helper_socket`        | `'/run/ferrogate/mia.sock'` | Helper-API socket; its presence enables the helper API. |

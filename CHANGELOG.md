@@ -4,6 +4,28 @@ All notable changes to this module are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this module
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-07-06
+
+### Added
+- **`ferrogate::mia` now renders `<config_dir>/mia.toml`** (the config file the
+  agent reads directly), in addition to the existing systemd `EnvironmentFile`
+  (`mia.env`). Interactive commands such as `mia test` do **not** inherit the
+  service's `EnvironmentFile`, so previously they read the empty packaged TOML
+  template and failed (`neither cmis.endpoint nor cmis.srv is set`,
+  `helper.socket is not configured`) even when the running service was correctly
+  configured. Both files are rendered from the same parameters; MIA's precedence
+  (`defaults < mia.toml < FERROGATE_* env`) keeps them consistent. Only
+  agent-honored keys are emitted (an unknown key makes MIA fail loudly at
+  startup); the hardening/runtime toggles with no TOML equivalent stay in
+  `mia.env`. New `manage_toml` parameter (default `true`) to opt out.
+- **`ferrogate::mia` now creates the `_ferrogate` privilege-drop account** the
+  daemon requires. `mia` starts as root and drops to `_ferrogate`; the package
+  ships no scriptlet to create it, so on a stock host the daemon exited with
+  `service user _ferrogate not found` and systemd crash-looped it, never binding
+  the helper socket. New `manage_user` (default `true`), `user_name`
+  (default `_ferrogate`), and `user_shell` (default `/sbin/nologin`) parameters;
+  Linux only (Windows runs the service as `LocalSystem`).
+
 ## [0.7.1] - 2026-07-06
 
 ### Added

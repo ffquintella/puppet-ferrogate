@@ -1,0 +1,66 @@
+<%- | String[1]                       $rust_log,
+      Optional[String[1]]             $cmis_endpoint,
+      Optional[String[1]]             $cmis_srv,
+      Optional[String[1]]             $cmis_spki_pin,
+      Optional[String[1]]             $helper_socket,
+      Optional[String[1]]             $helper_socket_mode,
+      Optional[String[1]]             $allowlist_path,
+      Optional[String[1]]             $allowlist_key,
+      Optional[Integer[1]]            $allowlist_max_age_secs,
+      Optional[String[1]]             $ima_log,
+| -%>
+# Managed by Puppet (ferrogate::mia) — do not edit by hand.
+# FerroGate Machine Identity Agent (MIA) configuration (TOML).
+#
+# This is the file `mia` reads directly — for the daemon at the system path AND
+# for interactive commands like `mia test`, which do NOT inherit the systemd
+# EnvironmentFile (mia.env). It is rendered from the same parameters as mia.env;
+# because MIA's precedence is  defaults < this file < FERROGATE_* env vars,
+# the two stay consistent and the env file still wins for the running service.
+#
+# Only agent-honored keys are emitted: an unknown key makes MIA fail loudly at
+# startup. Hardening/runtime toggles (seccomp, require_ima, run_as_*, extra env)
+# have no TOML equivalent and live only in mia.env. Values use TOML literal
+# strings so paths are written verbatim.
+log = '<%= $rust_log %>'
+<% if $cmis_endpoint or $cmis_srv or $cmis_spki_pin { -%>
+
+[cmis]
+<% if $cmis_endpoint { -%>
+endpoint = '<%= $cmis_endpoint %>'
+<% } -%>
+<% if $cmis_srv { -%>
+srv = '<%= $cmis_srv %>'
+<% } -%>
+<% if $cmis_spki_pin { -%>
+spki_pin = '<%= $cmis_spki_pin %>'
+<% } -%>
+<% } -%>
+<% if $helper_socket or $helper_socket_mode { -%>
+
+[helper]
+<% if $helper_socket { -%>
+socket = '<%= $helper_socket %>'
+<% } -%>
+<% if $helper_socket_mode { -%>
+socket_mode = '<%= $helper_socket_mode %>'
+<% } -%>
+<% } -%>
+<% if $allowlist_path or $allowlist_key or $allowlist_max_age_secs { -%>
+
+[allowlist]
+<% if $allowlist_path { -%>
+path = '<%= $allowlist_path %>'
+<% } -%>
+<% if $allowlist_key { -%>
+key = '<%= $allowlist_key %>'
+<% } -%>
+<% if $allowlist_max_age_secs { -%>
+max_age_secs = <%= $allowlist_max_age_secs %>
+<% } -%>
+<% } -%>
+<% if $ima_log { -%>
+
+[attestation]
+ima_log = '<%= $ima_log %>'
+<% } -%>

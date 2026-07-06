@@ -49,9 +49,26 @@
 # The package must be reachable through the node's existing package
 # repositories / Chocolatey sources (this class can optionally add a custom one
 # via `manage_repo`, mirroring how the server class treats the container
-# runtime). MIA is configured entirely through the config file this class
-# renders at `<config_dir>/mia.env`; every `FERROGATE_*` / `RUST_LOG` variable
-# overrides the optional TOML file.
+# runtime).
+#
+# ## Two config surfaces, kept in sync
+#
+# This class renders **both** of MIA's supported configuration files from the
+# same parameters:
+#
+# * `<config_dir>/mia.env` — the systemd `EnvironmentFile` the **service** loads
+#   (`KEY=VALUE`). It carries everything, including the hardening/runtime
+#   toggles (`FERROGATE_SECCOMP`, `FERROGATE_REQUIRE_IMA`, `FERROGATE_RUN_AS_*`,
+#   `extra_env`) that have no TOML equivalent.
+# * `<config_dir>/mia.toml` — the TOML config file `mia` reads **directly**.
+#   Interactive commands such as `mia test` do *not* inherit the service's
+#   `EnvironmentFile`, so without this file they read an empty packaged template
+#   and fail even when the service is healthy. It is emitted with only the
+#   agent-honored keys (an unknown key makes MIA fail loudly at startup).
+#
+# MIA's precedence is `defaults < mia.toml < FERROGATE_* env`, so the two files
+# stay consistent and the env file still wins for the running daemon. Set
+# `manage_toml => false` to render only the env file.
 #
 # @param package_name
 #   Name of the MIA package. On Windows this is the Chocolatey package id.
@@ -101,12 +118,32 @@
 #   Run state of the service (`'running'` / `'stopped'`).
 # @param service_enable
 #   Whether the service starts at boot.
+# @param manage_user
+#   Whether to create the `_ferrogate` privilege-drop account (Linux only). The
+#   `mia` daemon starts as root and drops to the `_ferrogate` user/group; the
+#   package ships no scriptlet to create it, so without this the daemon exits
+#   with `service user _ferrogate not found` and systemd crash-loops it. Defaults
+#   to `true`. Set `false` if another module owns the account, or when you drop
+#   to a different existing account via `run_as_uid` / `run_as_gid`. Ignored on
+#   Windows (the service runs as `LocalSystem`).
+# @param user_name
+#   Name of the privilege-drop account to create. The agent resolves the literal
+#   name `_ferrogate`, so change this only in tandem with `run_as_uid` /
+#   `run_as_gid` pointing the daemon elsewhere. Linux only.
+# @param user_shell
+#   Login shell for the privilege-drop account. Defaults to `/sbin/nologin`
+#   (present on the RedHat family and via merged-usr on Debian). Linux only.
 # @param config_dir
 #   Directory holding the MIA configuration. The package ships it; managed here
 #   so the env file has a parent on a fresh node. `undef` (the default) resolves
 #   to `/etc/ferrogate` on Linux and `C:/ProgramData/ferrogate` on Windows.
 # @param manage_config_dir
 #   Whether to manage `config_dir` as a directory.
+# @param manage_toml
+#   Whether to also render `<config_dir>/mia.toml`, the config file `mia` reads
+#   directly (so `mia test` and other interactive invocations, which do not see
+#   the service's systemd `EnvironmentFile`, are configured). Defaults to `true`.
+#   Set `false` to manage only `mia.env`.
 # @param rust_log
 #   `RUST_LOG` tracing filter for the agent.
 # @param cmis_endpoint
@@ -184,8 +221,12 @@ class ferrogate::mia (
   Boolean                         $manage_service         = true,
   Enum['running', 'stopped']      $service_ensure         = 'running',
   Boolean                         $service_enable         = true,
+  Boolean                         $manage_user            = true,
+  String[1]                       $user_name              = '_ferrogate',
+  Stdlib::Absolutepath            $user_shell             = '/sbin/nologin',
   Optional[Stdlib::Absolutepath]  $config_dir             = undef,
   Boolean                         $manage_config_dir      = true,
+  Boolean                         $manage_toml            = true,
   String[1]                       $rust_log               = 'info',
   Optional[String[1]]             $cmis_endpoint          = undef,
   Optional[String[1]]             $cmis_srv               = undef,
@@ -229,7 +270,8 @@ class ferrogate::mia (
   } else {
     $_config_dir = '/etc/ferrogate'
   }
-  $env_file = "${_config_dir}/mia.env"
+  $env_file  = "${_config_dir}/mia.env"
+  $toml_file = "${_config_dir}/mia.toml"
 
   if $_windows {
     # Windows file ACLs/modes differ from POSIX; let the resources default
@@ -336,6 +378,28 @@ class ferrogate::mia (
     }
   }
 
+  # The daemon starts as root (see the shipped unit) and drops privileges to the
+  # `_ferrogate` user/group itself. The package ships no scriptlet to create that
+  # account, so on a stock host `mia` exits with `service user _ferrogate not
+  # found` and systemd crash-loops it — never binding the helper socket. Create
+  # the account here (Linux only; Windows runs the service as LocalSystem).
+  if $manage_user and !$_windows {
+    group { $user_name:
+      ensure => present,
+      system => true,
+    }
+    user { $user_name:
+      ensure     => present,
+      system     => true,
+      gid        => $user_name,
+      shell      => $user_shell,
+      home       => '/nonexistent',
+      managehome => false,
+      comment    => 'FerroGate MIA privilege-drop account',
+      require    => Group[$user_name],
+    }
+  }
+
   if $manage_package {
     package { $package_name:
       ensure   => $package_ensure,
@@ -382,11 +446,50 @@ class ferrogate::mia (
     }),
   }
 
+  # The TOML config file `mia` reads directly. `mia test` and other interactive
+  # commands do not inherit the systemd EnvironmentFile above, so without this
+  # they read the empty packaged template and fail; the daemon also overlays
+  # FERROGATE_* env on top of it, so the two files stay consistent. Emit only
+  # agent-honored keys — an unknown key makes MIA fail loudly at startup.
+  if $manage_toml {
+    file { $toml_file:
+      ensure  => file,
+      owner   => $_owner,
+      group   => $_group,
+      mode    => $_file_mode,
+      content => epp('ferrogate/mia-client.toml.epp', {
+          'rust_log'               => $rust_log,
+          'cmis_endpoint'          => $cmis_endpoint,
+          'cmis_srv'               => $cmis_srv,
+          'cmis_spki_pin'          => $cmis_spki_pin,
+          'helper_socket'          => $_helper_socket,
+          'helper_socket_mode'     => $helper_socket_mode,
+          'allowlist_path'         => $allowlist_path,
+          'allowlist_key'          => $allowlist_key,
+          'allowlist_max_age_secs' => $allowlist_max_age_secs,
+          'ima_log'                => $ima_log,
+      }),
+    }
+  }
+
+  # The daemon reads mia.toml too, so it must be in place before the package's
+  # service starts and a change should refresh the service alongside the env file.
+  $_config_files = $manage_toml ? {
+    true    => [File[$env_file], File[$toml_file]],
+    default => [File[$env_file]],
+  }
+
   if $manage_config_dir {
     File[$_config_dir] -> File[$env_file]
+    if $manage_toml {
+      File[$_config_dir] -> File[$toml_file]
+    }
   }
   if $manage_package {
     Package[$package_name] -> File[$env_file]
+    if $manage_toml {
+      Package[$package_name] -> File[$toml_file]
+    }
   }
 
   if $manage_service {
@@ -394,10 +497,14 @@ class ferrogate::mia (
       ensure    => $service_ensure ? { 'running' => 'running', default => 'stopped' },
       enable    => $service_enable,
       provider  => $_service_provider,
-      subscribe => File[$env_file],
+      subscribe => $_config_files,
     }
     if $manage_package {
       Package[$package_name] -> Service[$service_name]
+    }
+    # The account must exist before the daemon starts and drops to it.
+    if $manage_user and !$_windows {
+      User[$user_name] -> Service[$service_name]
     }
   }
 }

@@ -46,6 +46,37 @@ describe 'ferrogate::mia' do
         provider: 'systemd',
       )
     end
+
+    # The `User[_ferrogate] -> Service[mia]` ordering is declared in the manifest
+    # with a chaining arrow; the Artichoke test evaluator does not materialize
+    # that edge (nor a `require` array of resource refs — it drops the service),
+    # so assert the resources and their attributes here rather than the edge.
+    it 'creates the _ferrogate privilege-drop account' do
+      is_expected.to contain_group('_ferrogate').with(ensure: 'present', system: true)
+      is_expected.to contain_user('_ferrogate').with(
+        ensure: 'present',
+        system: true,
+        gid:    '_ferrogate',
+        shell:  '/sbin/nologin',
+      )
+    end
+
+    it 'renders the TOML config file mia reads directly' do
+      is_expected.to contain_file('/etc/ferrogate/mia.toml').with(
+        ensure: 'file',
+        owner:  'root',
+        group:  'root',
+        mode:   '0640',
+      )
+    end
+
+    it 'writes the default log level and helper socket into the TOML' do
+      is_expected.to contain_file('/etc/ferrogate/mia.toml')
+        .with_content(%r{log = 'info'})
+        .with_content(%r{\[helper\]})
+        .with_content(%r{socket = '/run/ferrogate/mia\.sock'})
+        .with_content(%r{socket_mode = '660'})
+    end
   end
 
   context 'pointed at a CMIS server with an allowlist' do
@@ -67,6 +98,16 @@ describe 'ferrogate::mia' do
         .with_content(%r{FERROGATE_CMIS_SPKI_PIN=5f2ec4})
         .with_content(%r{FERROGATE_ALLOWLIST=/etc/ferrogate/allowlist\.cbor})
         .with_content(%r{FERROGATE_ALLOWLIST_KEY=/etc/ferrogate/allowlist\.pub})
+    end
+
+    it 'mirrors the CMIS and allowlist config into the TOML with honored keys' do
+      is_expected.to contain_file('/etc/ferrogate/mia.toml')
+        .with_content(%r{\[cmis\]})
+        .with_content(%r{endpoint = 'https://cmis\.example\.com:8443'})
+        .with_content(%r{spki_pin = '5f2ec4'})
+        .with_content(%r{\[allowlist\]})
+        .with_content(%r{path = '/etc/ferrogate/allowlist\.cbor'})
+        .with_content(%r{key = '/etc/ferrogate/allowlist\.pub'})
     end
   end
 
@@ -99,6 +140,36 @@ describe 'ferrogate::mia' do
     it 'does not also write a single endpoint' do
       is_expected.to contain_file('/etc/ferrogate/mia.env')
         .without_content(%r{FERROGATE_CMIS_ENDPOINT=})
+    end
+
+    it 'writes the SRV record into the TOML and omits endpoint' do
+      is_expected.to contain_file('/etc/ferrogate/mia.toml')
+        .with_content(%r{srv = '_cmis\._tcp\.prod\.example\.com'})
+        .without_content(%r{endpoint = })
+    end
+  end
+
+  context 'with manage_toml disabled' do
+    let(:facts) { MIA_FACTS }
+    let(:params) { { manage_toml: false } }
+
+    it { is_expected.to compile }
+
+    it 'renders the env file but not the TOML' do
+      is_expected.to contain_file('/etc/ferrogate/mia.env')
+      is_expected.not_to contain_file('/etc/ferrogate/mia.toml')
+    end
+  end
+
+  context 'with manage_user disabled' do
+    let(:facts) { MIA_FACTS }
+    let(:params) { { manage_user: false } }
+
+    it { is_expected.to compile }
+
+    it 'does not create the privilege-drop account' do
+      is_expected.not_to contain_user('_ferrogate')
+      is_expected.not_to contain_group('_ferrogate')
     end
   end
 
@@ -219,6 +290,17 @@ describe 'ferrogate::mia' do
     it 'drops the inapplicable Unix helper-socket default' do
       is_expected.to contain_file('C:/ProgramData/ferrogate/mia.env')
         .without_content(%r{FERROGATE_HELPER_SOCKET=})
+    end
+
+    it 'renders the TOML under ProgramData without the Unix socket default' do
+      is_expected.to contain_file('C:/ProgramData/ferrogate/mia.toml')
+        .with_content(%r{log = 'info'})
+        .without_content(%r{socket = '})
+    end
+
+    it 'does not create a POSIX privilege-drop account (runs as LocalSystem)' do
+      is_expected.not_to contain_user('_ferrogate')
+      is_expected.not_to contain_group('_ferrogate')
     end
   end
 
