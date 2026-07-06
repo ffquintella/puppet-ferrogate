@@ -4,6 +4,23 @@ All notable changes to this module are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this module
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-07-06
+
+### Added
+- **`attest_backend` parameter on `ferrogate::mia`** to select MIA's host-SVID
+  attestation backend. Maps to `FERROGATE_ATTEST_BACKEND` in `mia.env` and
+  `[attestation] backend` in `mia.toml`. Left `undef` (the default) the module
+  emits nothing and the agent takes its own default, `host-key` — the TPM-less
+  production profile that works on every platform. Setting `'virtual-tpm'`
+  selects MIA's **in-process software virtual TPM**: it runs the full TPM
+  attestation handshake with no hardware root of trust and is **insecure,
+  dev/test only**. There is no `swtpm` (or other) emulator to install — the
+  virtual TPM lives inside the `mia` binary — but it requires a `mia` build
+  compiled with the off-by-default `virtual-tpm` cargo feature (a stock release
+  binary refuses it and fails closed) and a CMIS configured to trust the
+  synthetic EK root and PCR digest the agent logs at startup. Rendered into both
+  config surfaces from the same parameter.
+
 ## [0.8.0] - 2026-07-06
 
 ### Added

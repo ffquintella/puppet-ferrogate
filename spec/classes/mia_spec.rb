@@ -149,6 +149,40 @@ describe 'ferrogate::mia' do
     end
   end
 
+  context 'with the virtual-tpm attestation backend selected' do
+    let(:facts) { MIA_FACTS }
+    let(:params) { { attest_backend: 'virtual-tpm' } }
+
+    it { is_expected.to compile }
+
+    it 'writes the attestation backend into the env file' do
+      is_expected.to contain_file('/etc/ferrogate/mia.env')
+        .with_content(%r{FERROGATE_ATTEST_BACKEND=virtual-tpm})
+    end
+
+    it 'mirrors the backend into the TOML attestation section' do
+      is_expected.to contain_file('/etc/ferrogate/mia.toml')
+        .with_content(%r{\[attestation\]})
+        .with_content(%r{backend = 'virtual-tpm'})
+    end
+  end
+
+  context 'with the default (host-key) attestation backend' do
+    let(:facts) { MIA_FACTS }
+
+    # Left unset, the module emits nothing so the agent takes its own default
+    # (host-key); it must not force a backend into either surface.
+    it 'writes no attestation backend into the env file' do
+      is_expected.to contain_file('/etc/ferrogate/mia.env')
+        .without_content(%r{FERROGATE_ATTEST_BACKEND=})
+    end
+
+    it 'writes no backend key into the TOML' do
+      is_expected.to contain_file('/etc/ferrogate/mia.toml')
+        .without_content(%r{backend = })
+    end
+  end
+
   context 'with manage_toml disabled' do
     let(:facts) { MIA_FACTS }
     let(:params) { { manage_toml: false } }

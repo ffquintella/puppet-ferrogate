@@ -8,6 +8,7 @@
       Optional[String[1]]             $allowlist_key,
       Optional[Integer[1]]            $allowlist_max_age_secs,
       Optional[String[1]]             $ima_log,
+      Optional[String[1]]             $attest_backend,
 | -%>
 # Managed by Puppet (ferrogate::mia) — do not edit by hand.
 # FerroGate Machine Identity Agent (MIA) configuration (TOML).
@@ -59,8 +60,13 @@ key = '<%= $allowlist_key %>'
 max_age_secs = <%= $allowlist_max_age_secs %>
 <% } -%>
 <% } -%>
-<% if $ima_log { -%>
+<% if $ima_log or $attest_backend { -%>
 
 [attestation]
+<% if $ima_log { -%>
 ima_log = '<%= $ima_log %>'
+<% } -%>
+<% if $attest_backend { -%>
+backend = '<%= $attest_backend %>'
+<% } -%>
 <% } -%>

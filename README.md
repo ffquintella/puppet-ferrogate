@@ -337,9 +337,34 @@ class { 'ferrogate::mia':
 | `helper_socket`        | `'/run/ferrogate/mia.sock'` | Helper-API socket; its presence enables the helper API. |
 | `allowlist_path`       | `undef`                     | Signed CBOR caller allowlist (requires `allowlist_key`).|
 | `allowlist_key`        | `undef`                     | Enrollment public key that verifies the allowlist.      |
+| `attest_backend`       | `undef`                     | `FERROGATE_ATTEST_BACKEND`: `host-key` (default) / `virtual-tpm` (dev/test). |
 | `seccomp`              | `undef`                     | `FERROGATE_SECCOMP`: `enforce`/`audit`/`off`.           |
 | `skip_hardening`       | `false`                     | Set `FERROGATE_SKIP_HARDENING=1` (dev only).            |
 | `rust_log`             | `'info'`                    | `RUST_LOG` tracing filter.                              |
+
+#### Attestation backend
+
+`attest_backend` selects how the agent obtains its host SVID. Left `undef` the
+module writes nothing and the agent takes its own default, `host-key` — the
+TPM-less production profile (a hardware fingerprint plus a machine signing key)
+that works on every supported platform:
+
+```puppet
+class { 'ferrogate::mia':
+  cmis_endpoint  => 'https://cmis.example.com:8443',
+  cmis_spki_pin  => '5f2e...c4',
+  attest_backend => 'virtual-tpm',   # dev/test only — see the warning below
+}
+```
+
+> **`virtual-tpm` is insecure and for dev/test only.** It runs the full TPM
+> attestation handshake against an **in-process software TPM** with no hardware
+> root of trust — there is *no* `swtpm` (or other emulator) to install; the
+> virtual TPM lives inside the `mia` process. It works only when `mia` was built
+> with the off-by-default `virtual-tpm` cargo feature (a stock release binary
+> refuses it and fails closed) and only against a CMIS configured to trust the
+> synthetic EK root and PCR digest the agent logs at startup. Never use it in
+> production.
 
 > This is distinct from the container-based `mia_enable` switch on the main
 > `ferrogate` class (which runs `mia` inside the server image, only for images

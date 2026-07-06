@@ -184,6 +184,19 @@
 # @param ima_log
 #   `FERROGATE_IMA_LOG` — override the IMA runtime-measurement log path. Linux
 #   only.
+# @param attest_backend
+#   `FERROGATE_ATTEST_BACKEND` / `[attestation] backend` — which backend the
+#   agent attests with to obtain its host SVID. `'host-key'` (the agent default,
+#   emitted when this is `undef`) is the TPM-less production profile — a hardware
+#   fingerprint plus a machine signing key — and works on every platform.
+#   `'virtual-tpm'` runs the full TPM attestation handshake against an **insecure,
+#   in-process software TPM** with no hardware root of trust: it is **dev/test
+#   only** and never for production. It also requires a `mia` build compiled with
+#   the off-by-default `virtual-tpm` cargo feature (a stock release binary refuses
+#   it and fails closed), and only succeeds against a CMIS configured to trust the
+#   synthetic EK root and PCR digest the agent logs at startup. There is no
+#   software-TPM emulator (e.g. `swtpm`) to install — the virtual TPM lives inside
+#   the `mia` process. Leave `undef` to take the agent default.
 # @param seccomp
 #   `FERROGATE_SECCOMP` — seccomp mode for staged rollout: `'enforce'`
 #   (default in the agent), `'audit'` (log violations) or `'off'`. Leave `undef`
@@ -237,6 +250,7 @@ class ferrogate::mia (
   Optional[Stdlib::Absolutepath]  $allowlist_key          = undef,
   Optional[Integer[1]]            $allowlist_max_age_secs = undef,
   Optional[Stdlib::Absolutepath]  $ima_log                = undef,
+  Optional[Enum['host-key', 'virtual-tpm']] $attest_backend = undef,
   Optional[Enum['enforce', 'audit', 'off']] $seccomp      = undef,
   Optional[Boolean]               $require_ima            = undef,
   Boolean                         $skip_hardening         = false,
@@ -437,6 +451,7 @@ class ferrogate::mia (
         'allowlist_key'          => $allowlist_key,
         'allowlist_max_age_secs' => $allowlist_max_age_secs,
         'ima_log'                => $ima_log,
+        'attest_backend'         => $attest_backend,
         'seccomp'                => $seccomp,
         'require_ima'            => $require_ima,
         'skip_hardening'         => $skip_hardening,
@@ -468,6 +483,7 @@ class ferrogate::mia (
           'allowlist_key'          => $allowlist_key,
           'allowlist_max_age_secs' => $allowlist_max_age_secs,
           'ima_log'                => $ima_log,
+          'attest_backend'         => $attest_backend,
       }),
     }
   }
