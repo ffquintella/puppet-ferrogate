@@ -79,6 +79,43 @@ describe 'ferrogate::mia' do
     end
   end
 
+  context 'pointed at a CMIS cluster via an SRV record' do
+    let(:facts) { MIA_FACTS }
+    let(:params) do
+      {
+        cmis_srv:      '_cmis._tcp.prod.example.com',
+        cmis_spki_pin: '5f2ec4',
+      }
+    end
+
+    it { is_expected.to compile }
+
+    it 'writes the CMIS SRV record and pin into the env file' do
+      is_expected.to contain_file('/etc/ferrogate/mia.env')
+        .with_content(%r{FERROGATE_CMIS_SRV=_cmis\._tcp\.prod\.example\.com})
+        .with_content(%r{FERROGATE_CMIS_SPKI_PIN=5f2ec4})
+    end
+
+    it 'does not also write a single endpoint' do
+      is_expected.to contain_file('/etc/ferrogate/mia.env')
+        .without_content(%r{FERROGATE_CMIS_ENDPOINT=})
+    end
+  end
+
+  context 'with both cmis_endpoint and cmis_srv set' do
+    let(:facts) { MIA_FACTS }
+    let(:params) do
+      {
+        cmis_endpoint: 'https://cmis.example.com:8443',
+        cmis_srv:      '_cmis._tcp.prod.example.com',
+      }
+    end
+
+    it 'fails compilation with a clear error' do
+      is_expected.to compile.and_raise_error(%r{mutually exclusive})
+    end
+  end
+
   context 'with the service unmanaged' do
     let(:facts) { MIA_FACTS }
     let(:params) { { manage_service: false } }

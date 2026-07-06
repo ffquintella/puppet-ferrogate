@@ -4,6 +4,20 @@ All notable changes to this module are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this module
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.1] - 2026-07-06
+
+### Added
+- **`cmis_srv` parameter on `ferrogate::mia`** for high-availability CMIS
+  discovery. Set it to a DNS SRV record (e.g. `_cmis._tcp.example.com`) and the
+  agent resolves it, prefers records by RFC 2782 priority/weight, dials the best
+  live node over hybrid-PQC TLS, and fails over automatically — an alternative
+  to the single `cmis_endpoint` URL. The rendered config gains a
+  `FERROGATE_CMIS_SRV` line. `cmis_spki_pin` authenticates every node behind the
+  record.
+- Compile-time guard: `cmis_endpoint` and `cmis_srv` are mutually exclusive and
+  setting both now fails with a clear error rather than letting the daemon
+  reject it at runtime.
+
 ## [0.7.0] - 2026-06-30
 
 ### Added

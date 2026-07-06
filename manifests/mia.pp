@@ -17,6 +17,12 @@
 #     cmis_spki_pin => '5f2e...c4',   # SHA-384 SPKI pin, lowercase hex
 #   }
 #
+# @example High availability — resolve CMIS nodes from a DNS SRV record
+#   class { 'ferrogate::mia':
+#     cmis_srv      => '_cmis._tcp.prod.example.com',
+#     cmis_spki_pin => '5f2e...c4',   # pins every node behind the SRV record
+#   }
+#
 # @example With a signed local-caller allowlist for the helper API
 #   class { 'ferrogate::mia':
 #     cmis_endpoint  => 'https://cmis.example.com:8443',
@@ -106,7 +112,15 @@
 # @param cmis_endpoint
 #   `FERROGATE_CMIS_ENDPOINT` — the CMIS server URL. An `https://` URL is dialed
 #   over hybrid-PQC TLS and authenticated by SPKI pin (see `cmis_spki_pin`);
-#   `http://` is plaintext bring-up only.
+#   `http://` is plaintext bring-up only. Mutually exclusive with `cmis_srv`.
+# @param cmis_srv
+#   `FERROGATE_CMIS_SRV` — a DNS SRV record advertising the CMIS nodes (e.g.
+#   `_cmis._tcp.example.com`) for high availability instead of a single
+#   `cmis_endpoint`. The agent resolves it, prefers records by RFC 2782
+#   priority/weight, dials the best live node over hybrid-PQC TLS, and fails
+#   over automatically (re-resolving so a rescaled cluster is followed). The
+#   `cmis_spki_pin` authenticates every node. Mutually exclusive with
+#   `cmis_endpoint`.
 # @param cmis_spki_pin
 #   `FERROGATE_CMIS_SPKI_PIN` — the accepted CMIS SPKI pin (lowercase-hex
 #   SHA-384). The server class publishes this value at
@@ -174,6 +188,7 @@ class ferrogate::mia (
   Boolean                         $manage_config_dir      = true,
   String[1]                       $rust_log               = 'info',
   Optional[String[1]]             $cmis_endpoint          = undef,
+  Optional[String[1]]             $cmis_srv               = undef,
   Optional[String[1]]             $cmis_spki_pin          = undef,
   Optional[String[1]]             $helper_socket          = '/run/ferrogate/mia.sock',
   Optional[String[1]]             $helper_socket_mode     = '660',
@@ -192,6 +207,12 @@ class ferrogate::mia (
   # rejects a path with no key, so fail fast here with a clearer message.
   if $allowlist_path and !$allowlist_key {
     fail('ferrogate::mia: allowlist_key is required whenever allowlist_path is set.')
+  }
+
+  # The agent accepts a single endpoint OR an SRV record, never both; catch the
+  # conflict at compile time rather than letting the daemon reject it at runtime.
+  if $cmis_endpoint and $cmis_srv {
+    fail('ferrogate::mia: cmis_endpoint and cmis_srv are mutually exclusive — set only one.')
   }
 
   # --- Resolve platform-specific defaults -----------------------------------
@@ -344,6 +365,7 @@ class ferrogate::mia (
     content => epp('ferrogate/mia-client.env.epp', {
         'rust_log'               => $rust_log,
         'cmis_endpoint'          => $cmis_endpoint,
+        'cmis_srv'               => $cmis_srv,
         'cmis_spki_pin'          => $cmis_spki_pin,
         'helper_socket'          => $_helper_socket,
         'helper_socket_mode'     => $helper_socket_mode,
