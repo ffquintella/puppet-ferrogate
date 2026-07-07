@@ -120,6 +120,87 @@ describe 'ferrogate::mia' do
     end
   end
 
+  context 'fetching this host\'s allowlist from CMIS on start' do
+    let(:facts) { MIA_FACTS }
+    let(:params) do
+      {
+        cmis_endpoint:          'https://cmis.example.com:8443',
+        cmis_spki_pin:          '5f2ec4',
+        allowlist_path:         '/var/lib/ferrogate/allowlist.cbor',
+        allowlist_key:          '/var/lib/ferrogate/allowlist.pub',
+        allowlist_fetch:        true,
+        allowlist_max_age_secs: 86_400,
+      }
+    end
+
+    it { is_expected.to compile }
+
+    it 'sets FERROGATE_ALLOWLIST_FETCH in the env file' do
+      is_expected.to contain_file('/etc/ferrogate/mia.env')
+        .with_content(%r{FERROGATE_ALLOWLIST_FETCH=1})
+        .with_content(%r{FERROGATE_ALLOWLIST_MAX_AGE_SECS=86400})
+    end
+
+    it 'renders fetch as a TOML boolean (unquoted) under [allowlist]' do
+      is_expected.to contain_file('/etc/ferrogate/mia.toml')
+        .with_content(%r{\[allowlist\]})
+        .with_content(%r{fetch = true})
+        .with_content(%r{max_age_secs = 86400})
+    end
+  end
+
+  context 'on the A2 bootstrap path (propose)' do
+    let(:facts) { MIA_FACTS }
+    let(:params) do
+      {
+        cmis_endpoint:                   'https://cmis.example.com:8443',
+        cmis_spki_pin:                   '5f2ec4',
+        allowlist_path:                  '/var/lib/ferrogate/allowlist.cbor',
+        allowlist_key:                   '/var/lib/ferrogate/allowlist.pub',
+        allowlist_propose:               true,
+        allowlist_propose_interval_secs: 300,
+      }
+    end
+
+    it { is_expected.to compile }
+
+    it 'sets the propose env vars' do
+      is_expected.to contain_file('/etc/ferrogate/mia.env')
+        .with_content(%r{FERROGATE_ALLOWLIST_PROPOSE=1})
+        .with_content(%r{FERROGATE_ALLOWLIST_PROPOSE_INTERVAL_SECS=300})
+    end
+
+    it 'renders propose keys under [allowlist] in the TOML' do
+      is_expected.to contain_file('/etc/ferrogate/mia.toml')
+        .with_content(%r{propose = true})
+        .with_content(%r{propose_interval_secs = 300})
+    end
+  end
+
+  context 'with allowlist_fetch but no allowlist_path' do
+    let(:facts) { MIA_FACTS }
+    let(:params) { { allowlist_fetch: true } }
+
+    it 'fails compilation with a clear error' do
+      is_expected.to compile.and_raise_error(%r{require allowlist_path})
+    end
+  end
+
+  context 'with a propose interval but propose disabled' do
+    let(:facts) { MIA_FACTS }
+    let(:params) do
+      {
+        allowlist_path:                  '/var/lib/ferrogate/allowlist.cbor',
+        allowlist_key:                   '/var/lib/ferrogate/allowlist.pub',
+        allowlist_propose_interval_secs: 300,
+      }
+    end
+
+    it 'fails compilation with a clear error' do
+      is_expected.to compile.and_raise_error(%r{allowlist_propose_interval_secs requires allowlist_propose})
+    end
+  end
+
   context 'pointed at a CMIS cluster via an SRV record' do
     let(:facts) { MIA_FACTS }
     let(:params) do

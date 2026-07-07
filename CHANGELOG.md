@@ -4,6 +4,29 @@ All notable changes to this module are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this module
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026-07-07
+
+### Added
+- **Allowlist fetch/propose parameters on `ferrogate::mia`.** Three new optional
+  parameters manage the `[allowlist]` fetch and A2-bootstrap keys, rendered into
+  both config surfaces from the same values:
+  - `allowlist_fetch` → `FERROGATE_ALLOWLIST_FETCH` / `[allowlist] fetch`: when
+    `true`, MIA pulls this host's allowlist from CMIS on every start (keyed by
+    EK-UUID) and writes the signed body to `allowlist_path`, verified against
+    `allowlist_key`.
+  - `allowlist_propose` → `FERROGATE_ALLOWLIST_PROPOSE` / `[allowlist] propose`:
+    the A2 bootstrap path where a host proposes itself to CMIS for allowlisting.
+    Enable **only** for bootstrap and remove once the host is approved.
+  - `allowlist_propose_interval_secs` →
+    `FERROGATE_ALLOWLIST_PROPOSE_INTERVAL_SECS` /
+    `[allowlist] propose_interval_secs`: re-propose cadence while awaiting
+    approval; only meaningful with `allowlist_propose => true`.
+
+  All three default to `undef` (emit nothing, take the agent default). Compile-time
+  guards require `allowlist_path` for any of them and require `allowlist_propose`
+  when an interval is set. Booleans render as `1`/`0` in `mia.env` and as native
+  TOML booleans in `mia.toml`.
+
 ## [0.9.0] - 2026-07-06
 
 ### Added

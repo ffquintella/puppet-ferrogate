@@ -31,6 +31,26 @@
 #     allowlist_key  => '/etc/ferrogate/allowlist.pub',
 #   }
 #
+# @example Fetch this host's allowlist from CMIS on every start (by EK-UUID)
+#   class { 'ferrogate::mia':
+#     cmis_endpoint          => 'https://cmis.example.com:8443',
+#     cmis_spki_pin          => '5f2e...c4',
+#     allowlist_path         => '/var/lib/ferrogate/allowlist.cbor',
+#     allowlist_key          => '/var/lib/ferrogate/allowlist.pub',
+#     allowlist_fetch        => true,
+#     allowlist_max_age_secs => 86400,
+#   }
+#
+# @example A2 bootstrap — propose this host, then remove `allowlist_propose` once approved
+#   class { 'ferrogate::mia':
+#     cmis_endpoint     => 'https://cmis.example.com:8443',
+#     cmis_spki_pin     => '5f2e...c4',
+#     allowlist_path    => '/var/lib/ferrogate/allowlist.cbor',
+#     allowlist_key     => '/var/lib/ferrogate/allowlist.pub',
+#     allowlist_fetch   => true,
+#     allowlist_propose => true,   # bootstrap only — drop after approval
+#   }
+#
 # ## Platform support
 #
 # On the **RedHat** and **Debian** families the package is an RPM/DEB installed
@@ -180,7 +200,25 @@
 #   `FERROGATE_ALLOWLIST_KEY` — trusted CMIS enrollment public key used to
 #   verify the allowlist signature. Required whenever `allowlist_path` is set.
 # @param allowlist_max_age_secs
-#   `FERROGATE_ALLOWLIST_MAX_AGE_SECS` — maximum accepted allowlist age.
+#   `FERROGATE_ALLOWLIST_MAX_AGE_SECS` / `[allowlist] max_age_secs` — maximum
+#   accepted allowlist age, in seconds.
+# @param allowlist_fetch
+#   `FERROGATE_ALLOWLIST_FETCH` / `[allowlist] fetch` — when `true`, MIA pulls
+#   this host's allowlist from CMIS on each start, keyed by its EK-UUID, and
+#   writes the signed body to `allowlist_path` (verified against `allowlist_key`).
+#   Requires `allowlist_path` (and hence `allowlist_key`). Leave `undef` to take
+#   the agent default (no fetch).
+# @param allowlist_propose
+#   `FERROGATE_ALLOWLIST_PROPOSE` / `[allowlist] propose` — enable **only** for
+#   the A2 bootstrap path: MIA proposes this host to CMIS for allowlisting.
+#   **Remove it (set back to `undef`/`false`) once the host is approved** — it is
+#   not a steady-state setting. Requires `allowlist_path`. Leave `undef` to take
+#   the agent default (do not propose).
+# @param allowlist_propose_interval_secs
+#   `FERROGATE_ALLOWLIST_PROPOSE_INTERVAL_SECS` / `[allowlist] propose_interval_secs`
+#   — how often (seconds) MIA re-sends its proposal while awaiting approval on the
+#   A2 bootstrap path. Only meaningful with `allowlist_propose => true`. Leave
+#   `undef` to take the agent default.
 # @param ima_log
 #   `FERROGATE_IMA_LOG` — override the IMA runtime-measurement log path. Linux
 #   only.
@@ -249,6 +287,9 @@ class ferrogate::mia (
   Optional[Stdlib::Absolutepath]  $allowlist_path         = undef,
   Optional[Stdlib::Absolutepath]  $allowlist_key          = undef,
   Optional[Integer[1]]            $allowlist_max_age_secs = undef,
+  Optional[Boolean]               $allowlist_fetch        = undef,
+  Optional[Boolean]               $allowlist_propose      = undef,
+  Optional[Integer[1]]            $allowlist_propose_interval_secs = undef,
   Optional[Stdlib::Absolutepath]  $ima_log                = undef,
   Optional[Enum['host-key', 'virtual-tpm']] $attest_backend = undef,
   Optional[Enum['enforce', 'audit', 'off']] $seccomp      = undef,
@@ -262,6 +303,19 @@ class ferrogate::mia (
   # rejects a path with no key, so fail fast here with a clearer message.
   if $allowlist_path and !$allowlist_key {
     fail('ferrogate::mia: allowlist_key is required whenever allowlist_path is set.')
+  }
+
+  # fetch/propose act on the allowlist body at `allowlist_path` (fetch writes it,
+  # verified against `allowlist_key`); they are meaningless without one, so fail
+  # fast rather than emitting an orphaned toggle the agent ignores or rejects.
+  if ($allowlist_fetch or $allowlist_propose or $allowlist_propose_interval_secs) and !$allowlist_path {
+    fail('ferrogate::mia: allowlist_fetch, allowlist_propose and allowlist_propose_interval_secs require allowlist_path (and allowlist_key) to be set.')
+  }
+
+  # The propose interval only governs the propose loop; setting it without
+  # enabling propose is a silent no-op — catch the mistake at compile time.
+  if $allowlist_propose_interval_secs and !$allowlist_propose {
+    fail('ferrogate::mia: allowlist_propose_interval_secs requires allowlist_propose => true.')
   }
 
   # The agent accepts a single endpoint OR an SRV record, never both; catch the
@@ -450,6 +504,9 @@ class ferrogate::mia (
         'allowlist_path'         => $allowlist_path,
         'allowlist_key'          => $allowlist_key,
         'allowlist_max_age_secs' => $allowlist_max_age_secs,
+        'allowlist_fetch'        => $allowlist_fetch,
+        'allowlist_propose'      => $allowlist_propose,
+        'allowlist_propose_interval_secs' => $allowlist_propose_interval_secs,
         'ima_log'                => $ima_log,
         'attest_backend'         => $attest_backend,
         'seccomp'                => $seccomp,
@@ -482,6 +539,9 @@ class ferrogate::mia (
           'allowlist_path'         => $allowlist_path,
           'allowlist_key'          => $allowlist_key,
           'allowlist_max_age_secs' => $allowlist_max_age_secs,
+          'allowlist_fetch'        => $allowlist_fetch,
+          'allowlist_propose'      => $allowlist_propose,
+          'allowlist_propose_interval_secs' => $allowlist_propose_interval_secs,
           'ima_log'                => $ima_log,
           'attest_backend'         => $attest_backend,
       }),

@@ -259,6 +259,36 @@ class { 'ferrogate::mia':
 }
 ```
 
+Instead of shipping the allowlist body out-of-band, let MIA pull this host's
+allowlist from CMIS on every start (keyed by EK-UUID) and write it to
+`allowlist_path`, verified against `allowlist_key`:
+
+```puppet
+class { 'ferrogate::mia':
+  cmis_endpoint          => 'https://cmis.example.com:8443',
+  cmis_spki_pin          => '5f2e...c4',
+  allowlist_path         => '/var/lib/ferrogate/allowlist.cbor',
+  allowlist_key          => '/var/lib/ferrogate/allowlist.pub',
+  allowlist_fetch        => true,
+  allowlist_max_age_secs => 86400,
+}
+```
+
+On the **A2 bootstrap** path a host proposes itself to CMIS for allowlisting;
+add `allowlist_propose => true` **only** for bootstrap and remove it once the
+host is approved:
+
+```puppet
+class { 'ferrogate::mia':
+  cmis_endpoint     => 'https://cmis.example.com:8443',
+  cmis_spki_pin     => '5f2e...c4',
+  allowlist_path    => '/var/lib/ferrogate/allowlist.cbor',
+  allowlist_key     => '/var/lib/ferrogate/allowlist.pub',
+  allowlist_fetch   => true,
+  allowlist_propose => true,   # bootstrap only — drop after approval
+}
+```
+
 The class installs the package, creates the `_ferrogate` privilege-drop account
 the daemon needs, renders **both** config surfaces, and enables/starts the `mia`
 service:
@@ -337,6 +367,10 @@ class { 'ferrogate::mia':
 | `helper_socket`        | `'/run/ferrogate/mia.sock'` | Helper-API socket; its presence enables the helper API. |
 | `allowlist_path`       | `undef`                     | Signed CBOR caller allowlist (requires `allowlist_key`).|
 | `allowlist_key`        | `undef`                     | Enrollment public key that verifies the allowlist.      |
+| `allowlist_max_age_secs` | `undef`                   | Max accepted allowlist age (seconds).                   |
+| `allowlist_fetch`      | `undef`                     | Pull this host's allowlist from CMIS each start, by EK-UUID (needs `allowlist_path`). |
+| `allowlist_propose`    | `undef`                     | A2 bootstrap only — propose this host to CMIS; remove after approval. |
+| `allowlist_propose_interval_secs` | `undef`          | Re-propose interval (seconds); needs `allowlist_propose => true`. |
 | `attest_backend`       | `undef`                     | `FERROGATE_ATTEST_BACKEND`: `host-key` (default) / `virtual-tpm` (dev/test). |
 | `seccomp`              | `undef`                     | `FERROGATE_SECCOMP`: `enforce`/`audit`/`off`.           |
 | `skip_hardening`       | `false`                     | Set `FERROGATE_SKIP_HARDENING=1` (dev only).            |

@@ -7,6 +7,9 @@
       Optional[String[1]]             $allowlist_path,
       Optional[String[1]]             $allowlist_key,
       Optional[Integer[1]]            $allowlist_max_age_secs,
+      Optional[Boolean]               $allowlist_fetch,
+      Optional[Boolean]               $allowlist_propose,
+      Optional[Integer[1]]            $allowlist_propose_interval_secs,
       Optional[String[1]]             $ima_log,
       Optional[String[1]]             $attest_backend,
 | -%>
@@ -47,7 +50,7 @@ socket = '<%= $helper_socket %>'
 socket_mode = '<%= $helper_socket_mode %>'
 <% } -%>
 <% } -%>
-<% if $allowlist_path or $allowlist_key or $allowlist_max_age_secs { -%>
+<% if $allowlist_path or $allowlist_key or $allowlist_max_age_secs or $allowlist_fetch =~ NotUndef or $allowlist_propose =~ NotUndef or $allowlist_propose_interval_secs { -%>
 
 [allowlist]
 <% if $allowlist_path { -%>
@@ -56,8 +59,17 @@ path = '<%= $allowlist_path %>'
 <% if $allowlist_key { -%>
 key = '<%= $allowlist_key %>'
 <% } -%>
+<% if $allowlist_fetch =~ NotUndef { -%>
+fetch = <%= $allowlist_fetch %>
+<% } -%>
 <% if $allowlist_max_age_secs { -%>
 max_age_secs = <%= $allowlist_max_age_secs %>
+<% } -%>
+<% if $allowlist_propose =~ NotUndef { -%>
+propose = <%= $allowlist_propose %>
+<% } -%>
+<% if $allowlist_propose_interval_secs { -%>
+propose_interval_secs = <%= $allowlist_propose_interval_secs %>
 <% } -%>
 <% } -%>
 <% if $ima_log or $attest_backend { -%>
