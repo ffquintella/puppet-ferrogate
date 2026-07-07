@@ -159,6 +159,16 @@
 #   to `/etc/ferrogate` on Linux and `C:/ProgramData/ferrogate` on Windows.
 # @param manage_config_dir
 #   Whether to manage `config_dir` as a directory.
+# @param manage_allowlist_dir
+#   Whether to ensure the directory holding `allowlist_path` exists (Linux and
+#   Windows). Defaults to `true`. It matters chiefly for `allowlist_fetch`: the
+#   daemon writes the signed allowlist body to `allowlist_path` on start and
+#   fails if the parent directory is missing, and the packaged default lives at
+#   `/var/lib/ferrogate`, outside `config_dir`. A no-op when `allowlist_path` is
+#   unset or already resolves inside a managed `config_dir` (no duplicate
+#   resource). This manages only the directory, never the allowlist body or the
+#   `allowlist_key` — provision the key out of band; MIA verifies the fetched
+#   body against it. Set `false` if the package or another module owns the path.
 # @param manage_toml
 #   Whether to also render `<config_dir>/mia.toml`, the config file `mia` reads
 #   directly (so `mia test` and other interactive invocations, which do not see
@@ -277,6 +287,7 @@ class ferrogate::mia (
   Stdlib::Absolutepath            $user_shell             = '/sbin/nologin',
   Optional[Stdlib::Absolutepath]  $config_dir             = undef,
   Boolean                         $manage_config_dir      = true,
+  Boolean                         $manage_allowlist_dir   = true,
   Boolean                         $manage_toml            = true,
   String[1]                       $rust_log               = 'info',
   Optional[String[1]]             $cmis_endpoint          = undef,
@@ -484,6 +495,30 @@ class ferrogate::mia (
     }
   }
 
+  # The allowlist body lives at `allowlist_path`, which may sit outside
+  # `config_dir` (the packaged default is /var/lib/ferrogate). With
+  # `allowlist_fetch` the daemon writes the signed body there on start and fails
+  # if the directory is missing, so ensure it exists. Skip when it resolves to a
+  # `config_dir` that is already managed above, to avoid a duplicate File[].
+  $_allowlist_dir = $allowlist_path ? {
+    undef   => undef,
+    default => dirname($allowlist_path),
+  }
+  # Manage it only when asked, and not when it duplicates an already-managed
+  # config_dir.
+  $_manage_allowlist_dir = $allowlist_path and $manage_allowlist_dir and !($manage_config_dir and $_allowlist_dir == $_config_dir)
+  if $_manage_allowlist_dir {
+    file { $_allowlist_dir:
+      ensure => directory,
+      owner  => $_owner,
+      group  => $_group,
+      mode   => $_dir_mode,
+    }
+    if $manage_package {
+      Package[$package_name] -> File[$_allowlist_dir]
+    }
+  }
+
   # systemd EnvironmentFile read by the shipped `mia` unit on Linux
   # (EnvironmentFile=-/etc/ferrogate/mia.env), or the plain KEY=VALUE config
   # file the agent reads on Windows. Env vars override the optional TOML, so
@@ -581,6 +616,11 @@ class ferrogate::mia (
     # The account must exist before the daemon starts and drops to it.
     if $manage_user and !$_windows {
       User[$user_name] -> Service[$service_name]
+    }
+    # With allowlist_fetch the daemon writes the fetched body here on start, so
+    # the directory must exist first.
+    if $_manage_allowlist_dir {
+      File[$_allowlist_dir] -> Service[$service_name]
     }
   }
 }

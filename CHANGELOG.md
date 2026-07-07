@@ -4,6 +4,22 @@ All notable changes to this module are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this module
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] - 2026-07-07
+
+### Added
+- **`manage_allowlist_dir` parameter on `ferrogate::mia`** (default `true`) to
+  ensure the directory holding `allowlist_path` exists. This completes the
+  `allowlist_fetch` path added in 0.10.0: the daemon writes the fetched signed
+  body to `allowlist_path` on start and fails if the parent directory is
+  missing, and the packaged default (`/var/lib/ferrogate`) lives outside
+  `config_dir`. The directory is created with the same owner/group/mode as
+  `config_dir`, ordered after the package and before the service. It is a no-op
+  when `allowlist_path` is unset or already resolves inside a managed
+  `config_dir` (no duplicate resource). The module still never writes the
+  allowlist body or the `allowlist_key` — provision the key out of band; MIA
+  verifies the fetched body against it. Set `false` when the package or another
+  module owns the directory.
+
 ## [0.10.0] - 2026-07-07
 
 ### Added

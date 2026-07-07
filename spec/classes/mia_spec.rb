@@ -147,6 +147,47 @@ describe 'ferrogate::mia' do
         .with_content(%r{fetch = true})
         .with_content(%r{max_age_secs = 86400})
     end
+
+    it 'creates the directory holding the fetched allowlist body' do
+      is_expected.to contain_file('/var/lib/ferrogate')
+        .with_ensure('directory')
+    end
+  end
+
+  context 'with the allowlist under the managed config_dir' do
+    let(:facts) { MIA_FACTS }
+    let(:params) do
+      {
+        allowlist_path:  '/etc/ferrogate/allowlist.cbor',
+        allowlist_key:   '/etc/ferrogate/allowlist.pub',
+        allowlist_fetch: true,
+      }
+    end
+
+    it { is_expected.to compile }
+
+    it 'does not declare a duplicate directory for config_dir' do
+      # config_dir itself is still managed, exactly once.
+      is_expected.to contain_file('/etc/ferrogate').with_ensure('directory')
+    end
+  end
+
+  context 'with manage_allowlist_dir => false' do
+    let(:facts) { MIA_FACTS }
+    let(:params) do
+      {
+        allowlist_path:       '/var/lib/ferrogate/allowlist.cbor',
+        allowlist_key:        '/var/lib/ferrogate/allowlist.pub',
+        allowlist_fetch:      true,
+        manage_allowlist_dir: false,
+      }
+    end
+
+    it { is_expected.to compile }
+
+    it 'leaves the allowlist directory to the package/operator' do
+      is_expected.not_to contain_file('/var/lib/ferrogate')
+    end
   end
 
   context 'on the A2 bootstrap path (propose)' do

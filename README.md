@@ -274,6 +274,14 @@ class { 'ferrogate::mia':
 }
 ```
 
+The daemon writes the fetched body to `allowlist_path` on start, so its parent
+directory must exist. `manage_allowlist_dir` (default `true`) ensures it — a
+no-op when the path is unset or already inside a managed `config_dir`, so the
+`/var/lib/ferrogate` above is created for you. The module never writes the
+allowlist body or the `allowlist_key`; provision the key out of band (MIA
+verifies the fetched body against it). Set `manage_allowlist_dir => false` if
+the package or another module owns the directory.
+
 On the **A2 bootstrap** path a host proposes itself to CMIS for allowlisting;
 add `allowlist_propose => true` **only** for bootstrap and remove it once the
 host is approved:
@@ -361,6 +369,7 @@ class { 'ferrogate::mia':
 | `repo_priority`        | `undef`                     | Windows — priority of the custom Chocolatey source.     |
 | `config_dir`           | OS default                  | `/etc/ferrogate` (Linux) / `C:/ProgramData/ferrogate` (Windows). |
 | `manage_toml`          | `true`                      | Also render `<config_dir>/mia.toml` so `mia test` works.|
+| `manage_allowlist_dir` | `true`                      | Ensure the directory of `allowlist_path` exists (needed for `allowlist_fetch`). |
 | `manage_user`          | `true`                      | Create the `_ferrogate` privilege-drop account (Linux). |
 | `cmis_endpoint`        | `undef`                     | `FERROGATE_CMIS_ENDPOINT` — the CMIS server URL.        |
 | `cmis_spki_pin`        | `undef`                     | `FERROGATE_CMIS_SPKI_PIN` — accepted SPKI pin (SHA-384).|
