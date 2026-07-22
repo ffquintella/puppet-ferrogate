@@ -368,9 +368,46 @@ describe 'ferrogate::mia' do
   context 'with repo management off (default)' do
     let(:facts) { MIA_FACTS }
 
-    it 'declares no custom repository' do
-      is_expected.not_to contain_yumrepo('ferrogate-mia')
+    it { is_expected.to compile }
+
+    it 'removes any repo the module previously added' do
+      is_expected.to contain_yumrepo('ferrogate-mia').with(ensure: 'absent')
+    end
+
+    it 'adds no active custom repository' do
+      is_expected.not_to contain_yumrepo('ferrogate-mia').with(ensure: 'present')
       is_expected.not_to contain_file('/etc/apt/sources.list.d/ferrogate-mia.list')
+    end
+  end
+
+  context 'with repo management off and the package unmanaged' do
+    let(:facts) { MIA_FACTS }
+    let(:params) { { manage_package: false } }
+
+    it { is_expected.to compile }
+
+    it 'still removes a stale repo but adds no package ordering' do
+      is_expected.to contain_yumrepo('ferrogate-mia').with(ensure: 'absent')
+      is_expected.not_to contain_package('ferrogate-mia')
+    end
+  end
+
+  context 'with repo management off on the Debian family' do
+    let(:facts) do
+      {
+        os: {
+          family:  'Debian',
+          name:    'Ubuntu',
+          release: { major: '24.04', full: '24.04' },
+          distro:  { codename: 'noble' },
+        },
+      }
+    end
+
+    it { is_expected.to compile }
+
+    it 'removes any apt source the module previously added' do
+      is_expected.to contain_file('/etc/apt/sources.list.d/ferrogate-mia.list').with(ensure: 'absent')
     end
   end
 
@@ -457,6 +494,10 @@ describe 'ferrogate::mia' do
     it 'does not create a POSIX privilege-drop account (runs as LocalSystem)' do
       is_expected.not_to contain_user('_ferrogate')
       is_expected.not_to contain_group('_ferrogate')
+    end
+
+    it 'removes any Chocolatey source the module previously added' do
+      is_expected.to contain_chocolateysource('ferrogate-mia').with(ensure: 'absent')
     end
   end
 

@@ -331,11 +331,19 @@ stay consistent and the env file still wins for the running daemon.
   module on the node (it supplies the `chocolatey` provider and
   `chocolateysource` type).
 
-By default the package is assumed reachable through the node's existing
-repositories / Chocolatey sources. To add a custom `ferrogate-mia` repository,
-set `manage_repo => true` and `repo_baseurl` — a `yumrepo` on the RedHat family,
-an apt source list on the Debian family, or a `chocolateysource` (custom NuGet
-feed) on Windows, ordered before the package:
+By default (`manage_repo => false`) the package is assumed reachable through the
+node's existing repositories / Chocolatey sources, and the module actively
+**removes** any `ferrogate-mia` repo it added on a previous run (setting the
+`yumrepo` / apt source / Chocolatey source to `ensure => absent`, ordered before
+the package). That way a stale or broken repo URL — for example a NuGet feed
+baseurl mistakenly applied to a RedHat host, which makes `dnf` 404 on every
+run — stops breaking package resolution, and the package falls back to a
+pre-existing repository. The removal is a no-op on a node that never had one.
+
+To add a custom `ferrogate-mia` repository, set `manage_repo => true` and
+`repo_baseurl` — a `yumrepo` on the RedHat family, an apt source list on the
+Debian family, or a `chocolateysource` (custom NuGet feed) on Windows, ordered
+before the package:
 
 ```puppet
 # RedHat / Debian — RPM/DEB repository
@@ -362,7 +370,7 @@ class { 'ferrogate::mia':
 | ---------------------- | --------------------------- | -------------------------------------------------------- |
 | `package_name`         | `'ferrogate-mia'`           | MIA package (Chocolatey id on Windows).                  |
 | `package_ensure`       | `'installed'`               | `ensure` for the package.                               |
-| `manage_repo`          | `false`                     | Add a custom `ferrogate-mia` repo (needs `repo_baseurl`).|
+| `manage_repo`          | `false`                     | `true`: add a custom `ferrogate-mia` repo (needs `repo_baseurl`); `false`: remove any repo the module added, use existing repos.|
 | `repo_baseurl`         | `undef`                     | Repo URL (yum `baseurl` / apt `deb` URI / Choco source).|
 | `repo_gpgkey`          | `undef`                     | GPG key (RedHat URL/path; Debian `signed-by` keyring).  |
 | `repo_user` / `repo_password` | `undef`              | Windows — auth for the custom Chocolatey source/feed.   |

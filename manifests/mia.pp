@@ -102,7 +102,13 @@
 #   existing repositories. When `true`, `repo_baseurl` is required and a repo is
 #   declared (a `yumrepo` on the RedHat family, an apt source list on the Debian
 #   family, a `chocolateysource` / custom NuGet feed on Windows) and ordered
-#   before the package.
+#   before the package. When `false`, the module actively **removes** any
+#   `ferrogate-mia` repo it previously added (sets the `yumrepo` / apt source /
+#   Chocolatey source to `ensure => absent`, ordered before the package) so a
+#   stale or broken URL — e.g. a NuGet feed baseurl mistakenly applied to a
+#   RedHat host, which makes `dnf` 404 on every run — stops breaking package
+#   resolution and the package falls back to a pre-existing repository. The
+#   removal is an idempotent no-op on a node that never had a managed repo.
 # @param repo_baseurl
 #   Base URL of the custom repository. Required when `manage_repo` is `true`.
 #   RedHat: the `yumrepo` `baseurl`. Debian: the `deb` line URI. Windows: the
@@ -380,6 +386,14 @@ class ferrogate::mia (
   }
 
   # --- Optional custom package repository (off by default) ------------------
+  # When `manage_repo` is false the package is expected to resolve through a
+  # repository already present on the node, so we do not add one. We do, however,
+  # actively *remove* any `ferrogate-mia` repo this module previously added: a
+  # `yumrepo`/apt source/Chocolatey source left on disk keeps `dnf`/`apt` hitting
+  # its (possibly dead) URL on every run — e.g. a stale NuGet feed baseurl that
+  # 404s — even though nothing declares it anymore. Ensuring it absent is an
+  # idempotent no-op on a node that never had one, and lets the package fall back
+  # to the pre-existing repository.
   if $manage_repo {
     if !$repo_baseurl {
       fail('ferrogate::mia: repo_baseurl is required when manage_repo is true.')
@@ -453,6 +467,39 @@ class ferrogate::mia (
       }
       default: {
         fail("ferrogate::mia: manage_repo is not supported on os family '${facts['os']['family']}'.")
+      }
+    }
+  } else {
+    # Repo management disabled: tear down any repo this module may have added so a
+    # stale/broken URL stops breaking package resolution, and order the removal
+    # before the package so the very next `dnf`/`apt` run is already clean.
+    case $facts['os']['family'] {
+      'RedHat': {
+        yumrepo { 'ferrogate-mia':
+          ensure => absent,
+        }
+        if $manage_package {
+          Yumrepo['ferrogate-mia'] -> Package[$package_name]
+        }
+      }
+      'Debian': {
+        file { '/etc/apt/sources.list.d/ferrogate-mia.list':
+          ensure => absent,
+        }
+        if $manage_package {
+          File['/etc/apt/sources.list.d/ferrogate-mia.list'] -> Package[$package_name]
+        }
+      }
+      'windows': {
+        chocolateysource { 'ferrogate-mia':
+          ensure => absent,
+        }
+        if $manage_package {
+          Chocolateysource['ferrogate-mia'] -> Package[$package_name]
+        }
+      }
+      default: {
+        # Other families never had a managed repo; nothing to remove.
       }
     }
   }
