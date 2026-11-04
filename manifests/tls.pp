@@ -67,11 +67,12 @@ class ferrogate::tls {
 
   # --- tls/ directory (bind-mounted into the container) ---------------------
   file { $tls_dir:
-    ensure  => directory,
-    owner   => $_owner,
-    group   => $_grp,
-    mode    => '0750',
-    require => File[$config_dir],
+    ensure                  => directory,
+    owner                   => $_owner,
+    group                   => $_grp,
+    mode                    => '0750',
+    selinux_ignore_defaults => true,
+    require                 => File[$config_dir],
   }
 
   # --- Generate a self-signed certificate when none is supplied -------------
@@ -109,21 +110,23 @@ class ferrogate::tls {
   # generate exec, which has already created it). Owned by the container-mapped
   # id so the in-container process can read them.
   file { $cert_file:
-    ensure  => file,
-    owner   => $_owner,
-    group   => $_grp,
-    mode    => '0640',
-    content => $_supplied ? { true => $cert, default => undef },
-    require => $_material_anchor,
+    ensure                  => file,
+    owner                   => $_owner,
+    group                   => $_grp,
+    mode                    => '0640',
+    content                 => $_supplied ? { true => $cert, default => undef },
+    selinux_ignore_defaults => true,
+    require                 => $_material_anchor,
   }
 
   file { $key_file:
-    ensure  => file,
-    owner   => $_owner,
-    group   => $_grp,
-    mode    => '0640',
-    content => $_supplied ? { true => $key, default => undef },
-    require => $_material_anchor,
+    ensure                  => file,
+    owner                   => $_owner,
+    group                   => $_grp,
+    mode                    => '0640',
+    content                 => $_supplied ? { true => $key, default => undef },
+    selinux_ignore_defaults => true,
+    require                 => $_material_anchor,
   }
 
   # --- SPKI pin (SHA-384 of the cert's SubjectPublicKeyInfo) ----------------

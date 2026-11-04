@@ -57,11 +57,15 @@ class ferrogate::config {
 
   # Volumes mounted into the container — owned by the (possibly remapped) id the
   # container process writes as. See the comment above.
+  # SELinux attributes are deliberately unmanaged: the container runtime relabels
+  # these with container_file_t + a per-container MCS range (:Z) on start, and
+  # Puppet would otherwise reset them to the policy default on every run.
   file { [$logs_dir, $audit_dir, $raft_dir, $issuer_dir, $admin_dir]:
-    ensure => directory,
-    owner  => $_vol_owner,
-    group  => $_vol_group,
-    mode   => '0750',
+    ensure                  => directory,
+    owner                   => $_vol_owner,
+    group                   => $_vol_group,
+    mode                    => '0750',
+    selinux_ignore_defaults => true,
   }
 
   # --- Per-instance environment files ---------------------------------------

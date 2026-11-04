@@ -4,6 +4,16 @@ All notable changes to this module are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this module
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.2] - 2026-11-04
+
+### Fixed
+- **Perpetual SELinux "corrective" changes on every agent run.** The
+  container-mounted directories and TLS/peer-TLS files are relabelled by the
+  container runtime (`container_file_t` with a per-container MCS range via
+  `:Z`), but Puppet reset them to the policy default (`var_t`, `s0`) each run.
+  These resources now set `selinux_ignore_defaults => true`, so Puppet leaves
+  their SELinux attributes alone.
+
 ## [0.12.1] - 2026-11-04
 
 ### Fixed

@@ -82,11 +82,12 @@ class ferrogate::peer_ca {
 
   # --- peer-tls/ directory (bind-mounted into the container) ----------------
   file { $peer_dir:
-    ensure  => directory,
-    owner   => $_owner,
-    group   => $_grp,
-    mode    => '0750',
-    require => File[$config_dir],
+    ensure                  => directory,
+    owner                   => $_owner,
+    group                   => $_grp,
+    mode                    => '0750',
+    selinux_ignore_defaults => true,
+    require                 => File[$config_dir],
   }
 
   # --- CA certificate + key: supplied verbatim, or generated ----------------
@@ -103,12 +104,13 @@ class ferrogate::peer_ca {
     # CA certificate is the in-container trust anchor (SSL_CERT_FILE), so it
     # lives in the mounted dir and is owned by the container-mapped id.
     file { $ca_cert_file:
-      ensure  => file,
-      owner   => $_owner,
-      group   => $_grp,
-      mode    => '0644',
-      content => $ca_cert,
-      require => File[$peer_dir],
+      ensure                  => file,
+      owner                   => $_owner,
+      selinux_ignore_defaults => true,
+      group                   => $_grp,
+      mode                    => '0644',
+      content                 => $ca_cert,
+      require                 => File[$peer_dir],
     }
   } else {
     # Generate the CA key once (host-only) — never regenerated implicitly, since
@@ -137,11 +139,12 @@ class ferrogate::peer_ca {
       require => Exec['ferrogate-peer-ca-genkey'],
     }
     file { $ca_cert_file:
-      ensure  => file,
-      owner   => $_owner,
-      group   => $_grp,
-      mode    => '0644',
-      require => Exec['ferrogate-peer-ca-gencert'],
+      ensure                  => file,
+      owner                   => $_owner,
+      selinux_ignore_defaults => true,
+      group                   => $_grp,
+      mode                    => '0644',
+      require                 => Exec['ferrogate-peer-ca-gencert'],
     }
   }
 
@@ -168,18 +171,20 @@ class ferrogate::peer_ca {
   }
 
   file { $key_file:
-    ensure  => file,
-    owner   => $_owner,
-    group   => $_grp,
-    mode    => '0640',
-    require => Exec['ferrogate-peer-genkey'],
+    ensure                  => file,
+    owner                   => $_owner,
+    selinux_ignore_defaults => true,
+    group                   => $_grp,
+    mode                    => '0640',
+    require                 => Exec['ferrogate-peer-genkey'],
   }
 
   file { $cert_file:
-    ensure  => file,
-    owner   => $_owner,
-    group   => $_grp,
-    mode    => '0640',
-    require => Exec['ferrogate-peer-gencert'],
+    ensure                  => file,
+    owner                   => $_owner,
+    selinux_ignore_defaults => true,
+    group                   => $_grp,
+    mode                    => '0640',
+    require                 => Exec['ferrogate-peer-gencert'],
   }
 }
