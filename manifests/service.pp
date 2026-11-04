@@ -12,6 +12,7 @@ class ferrogate::service {
   $audit_dir  = $ferrogate::audit_dir
   $raft_dir   = $ferrogate::raft_dir
   $issuer_dir = $ferrogate::issuer_dir
+  $admin_dir  = $ferrogate::admin_dir
   $config_dir = $ferrogate::config_dir
 
   # CMIS: gRPC server. Mounts the log + audit (WORM) volumes, the raft store
@@ -27,6 +28,10 @@ class ferrogate::service {
       "${audit_dir}:/var/lib/ferrogate/audit",
       "${raft_dir}:/var/lib/ferrogate/raft",
       "${issuer_dir}:/var/lib/ferrogate/issuer",
+      # Admin subsystem keys (secrets.key, audit-pseudonym.key). Without this
+      # mount they are regenerated on every container recreate and the admin
+      # listener refuses to start once the cluster has admin state.
+      "${admin_dir}:/var/lib/ferrogate/admin",
     ]
     # Optional bind mounts: the listener TLS material (cmis_tls_enable) and the
     # managed inter-node peer CA/leaf (multi-node managed-CA path). Either may be

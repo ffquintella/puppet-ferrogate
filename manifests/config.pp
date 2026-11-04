@@ -19,6 +19,7 @@ class ferrogate::config {
   $audit_dir  = $ferrogate::audit_dir
   $raft_dir   = $ferrogate::raft_dir
   $issuer_dir = $ferrogate::issuer_dir
+  $admin_dir  = $ferrogate::admin_dir
 
   # The bind-mounted volumes (logs, audit) are written *from inside* the
   # container by its non-root user. Under rootless podman that internal id is
@@ -45,6 +46,7 @@ class ferrogate::config {
   # /srv/application-data/ferrogate[/<env>]/audit  (container-mapped owner)
   # /srv/application-data/ferrogate[/<env>]/raft   (container-mapped owner)
   # /srv/application-data/ferrogate[/<env>]/issuer (container-mapped owner)
+  # /srv/application-data/ferrogate[/<env>]/admin  (container-mapped owner)
   # /srv/application-logs/ferrogate[/<env>]        (container-mapped owner)
   file { [$config_dir, $data_dir]:
     ensure => directory,
@@ -55,7 +57,7 @@ class ferrogate::config {
 
   # Volumes mounted into the container — owned by the (possibly remapped) id the
   # container process writes as. See the comment above.
-  file { [$logs_dir, $audit_dir, $raft_dir, $issuer_dir]:
+  file { [$logs_dir, $audit_dir, $raft_dir, $issuer_dir, $admin_dir]:
     ensure => directory,
     owner  => $_vol_owner,
     group  => $_vol_group,
@@ -87,6 +89,7 @@ class ferrogate::config {
           'allowlist_proposals' => $ferrogate::_cmis_allowlist_proposals,
           'trust_domain_line'   => $ferrogate::_cmis_trust_domain_line,
           'ttl_env'             => $ferrogate::_cmis_ttl_env,
+          'admin_env'           => $ferrogate::_cmis_admin_env,
           'ha_env'              => $ferrogate::_cmis_ha_env,
           'extra_env'           => $ferrogate::_extra_env,
       }),
