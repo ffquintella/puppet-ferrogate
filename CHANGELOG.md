@@ -4,6 +4,16 @@ All notable changes to this module are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this module
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.1] - 2026-11-04
+
+### Fixed
+- **Rootless podman: a changed Quadlet `.container` file now restarts the
+  running service.** The module only ran `systemctl --user start`, guarded by
+  `is-active`, which is a no-op on a running unit — so changes (new volumes,
+  image tag) were written but never applied until someone restarted by hand. A
+  `refreshonly` restart exec, subscribed to the unit file, now handles it. Note
+  this restarts the service on every node that receives a unit change.
+
 ## [0.12.0] - 2026-11-04
 
 ### Added

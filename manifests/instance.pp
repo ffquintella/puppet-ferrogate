@@ -134,6 +134,24 @@ define ferrogate::instance (
       # the generator turns into a wants-symlink on each daemon-reload (and
       # linger, enabled in install.pp, lets the user manager start it at boot).
       # So the only runtime action here is to start it.
+      # A changed `.container` file only takes effect once the container is
+      # recreated, and `start` is a no-op on a running unit — so restart it when
+      # the file changes. `onlyif is-active` leaves first install to the start
+      # exec below; ordering restart first means a running unit is restarted once
+      # and a stopped one is started once.
+      exec { "ferrogate-user-restart-${command}":
+        command     => "systemctl --user restart ${svc}.service",
+        path        => ['/usr/bin', '/bin'],
+        user        => $user,
+        cwd         => "/home/${user}",
+        environment => [$_sysd, "HOME=/home/${user}"],
+        onlyif      => "systemctl --user is-active --quiet ${svc}.service",
+        refreshonly => true,
+        require     => Exec["ferrogate-user-daemon-reload-${command}"],
+        subscribe   => File["${_unit_dir}/${svc}.container"],
+        before      => Exec["ferrogate-user-start-${command}"],
+      }
+
       exec { "ferrogate-user-start-${command}":
         command     => "systemctl --user start ${svc}.service",
         path        => ['/usr/bin', '/bin'],
