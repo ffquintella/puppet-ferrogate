@@ -37,6 +37,7 @@ optional **environment variant** (empty by default):
 /srv/application-data/ferrogate[/<app_environment>]/audit   # CMIS WORM audit store
 /srv/application-data/ferrogate[/<app_environment>]/raft    # CMIS raft store (allowlists, proposals, SVIDs)
 /srv/application-data/ferrogate[/<app_environment>]/issuer  # CMIS issuer signing key
+/srv/application-data/ferrogate[/<app_environment>]/admin   # CMIS admin keys (secrets.key, audit-pseudonym.key)
 /srv/application-logs/ferrogate[/<app_environment>]         # traced output
 ```
 
@@ -472,6 +473,8 @@ Key parameters (see the puppet-strings docs in
 | `cmis_allowlist_proposals` | `'bootstrap'` | `CMIS_ALLOWLIST_PROPOSALS` — host-driven `ProposeAllowlist` policy: `off`/`bootstrap`/`always`. |
 | `cmis_svid_ttl_secs`  | `undef`          | `CMIS_SVID_TTL_SECS` (CMIS ≥ 0.19.12) — issued-SVID lifetime in seconds. Unset = binary default (30 d). Range `[96 h, 30 d]`. |
 | `cmis_allowlist_ttl_secs` | `undef`      | `CMIS_ALLOWLIST_TTL_SECS` (CMIS ≥ 0.19.12) — signed-allowlist validity in seconds. Unset = binary default (96 h). Range `[96 h, 30 d]`; keep ≤ MIA's `allowlist.max_age_secs`. |
+| `cmis_admin_pepper_file` | `undef` | `CMIS_ADMIN_PEPPER_FILE` — in-container path of the admin password pepper. Unset = no pepper. Identical on every node; set before enrolling the first admin. |
+| `cmis_admin_password_blocklist_file` | `undef` | `CMIS_ADMIN_PASSWORD_BLOCKLIST_FILE` — in-container path of an extra admin password blocklist. Unset = embedded list only. |
 | `cmis_cluster_peers`  | `{}`             | CMIS HA Raft peer set (`id => {raft_addr,api_addr}`). Empty = single-node. See [High Availability](#high-availability-cmis-raft-cluster). |
 | `cmis_node_id`        | `undef`          | This node's id within `cmis_cluster_peers` (required when multi-node). |
 | `cmis_raft_port` / `cmis_api_port` | `9601` / `9602` | Raft + management-API transport ports (single-node `*_ADDR`; published when multi-node). |

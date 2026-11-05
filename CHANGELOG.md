@@ -4,6 +4,51 @@ All notable changes to this module are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this module
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.2] - 2026-11-04
+
+### Fixed
+- **Perpetual SELinux "corrective" changes on every agent run.** The
+  container-mounted directories and TLS/peer-TLS files are relabelled by the
+  container runtime (`container_file_t` with a per-container MCS range via
+  `:Z`), but Puppet reset them to the policy default (`var_t`, `s0`) each run.
+  These resources now set `selinux_ignore_defaults => true`, so Puppet leaves
+  their SELinux attributes alone.
+
+## [0.12.1] - 2026-11-04
+
+### Fixed
+- **Rootless podman: a changed Quadlet `.container` file now restarts the
+  running service.** The module only ran `systemctl --user start`, guarded by
+  `is-active`, which is a no-op on a running unit — so changes (new volumes,
+  image tag) were written but never applied until someone restarted by hand. A
+  `refreshonly` restart exec, subscribed to the unit file, now handles it. Note
+  this restarts the service on every node that receives a unit change.
+
+## [0.12.0] - 2026-11-04
+
+### Added
+- **Persistent admin state volume.** CMIS now mounts
+  `/srv/application-data/ferrogate[/<env>]/admin` at `/var/lib/ferrogate/admin`
+  (directory managed, container-mapped owner, mode `0750`). Previously the admin
+  `secrets.key` and `audit-pseudonym.key` lived in the container's ephemeral
+  layer, so every container recreate generated new keys; once the cluster had
+  admin state the admin subsystem then refused to start ("admin key files differ
+  from the ones this cluster was set up with") and the admin listener (8444)
+  never came up. The module does **not** write the key files: they must be
+  identical on every node of a multi-node cluster and are provisioned out of
+  band.
+- **`cmis_admin_pepper_file`** → `CMIS_ADMIN_PEPPER_FILE` and
+  **`cmis_admin_password_blocklist_file`** → `CMIS_ADMIN_PASSWORD_BLOCKLIST_FILE`
+  (both in-container paths, default `undef` = unset).
+
+### Upgrade note
+- Adding the volume changes the Quadlet unit, so Puppet recreates the container.
+  On a node that already has admin state, **copy the live key files out of the
+  running container into the new host `admin/` directory first**
+  (`podman cp ferrogate-cmis:/var/lib/ferrogate/admin/. <admin_dir>/`, mode
+  `0400`/`0600`, container-mapped owner) — otherwise an empty directory is
+  mounted and new keys are generated.
+
 ## [0.11.0] - 2026-07-07
 
 ### Added

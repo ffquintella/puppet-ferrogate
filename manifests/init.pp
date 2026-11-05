@@ -119,6 +119,20 @@
 #   `allowlist.max_age_secs`** (`FERROGATE_ALLOWLIST_MAX_AGE_SECS`, also 96 h by
 #   default) — a freshly signed list older than the consumer's window is
 #   rejected as stale, so raise both together if you lengthen it.
+# @param cmis_admin_pepper_file
+#   `CMIS_ADMIN_PEPPER_FILE` — **in-container** path of the pepper file mixed
+#   into admin password hashes. `undef` (the default) leaves it unset, in which
+#   case CMIS hashes admin passwords without a pepper. The file must be
+#   identical on every node of a cluster and is provisioned out of band; the
+#   persistent admin directory (`/srv/application-data/ferrogate[/<env>]/admin`,
+#   mounted at `/var/lib/ferrogate/admin`) is a convenient place for it. Set it
+#   **before** enrolling the first administrator: changing it afterwards
+#   invalidates existing admin password hashes.
+# @param cmis_admin_password_blocklist_file
+#   `CMIS_ADMIN_PASSWORD_BLOCKLIST_FILE` — **in-container** path of a password
+#   blocklist checked on admin password changes, in addition to the small
+#   embedded list. `undef` (the default) leaves it unset. Provision it out of
+#   band, identically on every node.
 # @param cmis_cluster_peers
 #   CMIS High Availability (F05) — the Raft peer set this node belongs to. CMIS
 #   keeps every durable store (issued SVIDs, host allowlists, pending allowlist
@@ -314,6 +328,8 @@ class ferrogate (
   Enum['off', 'bootstrap', 'always'] $cmis_allowlist_proposals = 'bootstrap',
   Optional[Integer[345600, 2592000]] $cmis_svid_ttl_secs      = undef,
   Optional[Integer[345600, 2592000]] $cmis_allowlist_ttl_secs = undef,
+  Optional[Stdlib::Unixpath]       $cmis_admin_pepper_file = undef,
+  Optional[Stdlib::Unixpath]       $cmis_admin_password_blocklist_file = undef,
   Hash[Integer[1], Struct[{
       'raft_addr' => String[1],
       'api_addr'  => String[1],
@@ -420,6 +436,10 @@ class ferrogate (
   $audit_dir  = "${data_dir}/audit"
   $raft_dir   = "${data_dir}/raft"
   $issuer_dir = "${data_dir}/issuer"
+  # Admin subsystem state (secrets.key, audit-pseudonym.key). Must be persistent
+  # and identical on every node of a cluster: the admin subsystem refuses to
+  # start when its key files differ from the ones the cluster was set up with.
+  $admin_dir  = "${data_dir}/admin"
 
   # Re-export the parameters as body variables so the contained sub-classes can
   # read them as `$ferrogate::_<name>` (qualified class *parameters* are not
@@ -473,6 +493,17 @@ class ferrogate (
       + $_cmis_allowlist_ttl_line
     ).join("\n")
   }
+  # Admin subsystem env lines (pepper / password blocklist). Unset ⇒ '' so the
+  # vars are left out and CMIS keeps its defaults.
+  $_cmis_admin_pepper_line = $cmis_admin_pepper_file ? {
+    undef   => [],
+    default => ["CMIS_ADMIN_PEPPER_FILE=${cmis_admin_pepper_file}"],
+  }
+  $_cmis_admin_blocklist_line = $cmis_admin_password_blocklist_file ? {
+    undef   => [],
+    default => ["CMIS_ADMIN_PASSWORD_BLOCKLIST_FILE=${cmis_admin_password_blocklist_file}"],
+  }
+  $_cmis_admin_env = ($_cmis_admin_pepper_line + $_cmis_admin_blocklist_line).join("\n")
   # CMIS HA: render the peer set as CMIS_CLUSTER_PEERS' `id=raft,api;...` form.
   # Iterate the sorted key array (not a two-arg hash lambda) for a deterministic
   # spec the test evaluator can render. Empty hash ⇒ '' ⇒ single-node cluster.
