@@ -4,6 +4,25 @@ All notable changes to this module are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this module
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.0] - 2026-11-10
+
+### Added
+- **`cmis_admin_listen`** → `CMIS_ADMIN_LISTEN` (default `undef` = unset, so the
+  admin listener keeps CMIS's `127.0.0.1:8444` and nothing changes on upgrade).
+  The `Admin` gRPC service (login, accounts, sessions, enrollment) is served
+  only on that listener — on the main listener (8443) it answers
+  `UNIMPLEMENTED admin_listener_only` — so remote admin clients (CLI, tray admin
+  app) could not reach it. Set it (e.g. `'0.0.0.0:8444'`) to expose it, and
+  restrict the port with a host firewall.
+- **`cmis_admin_port`** (default `8444`): the port published for the admin
+  listener on a single-node (rootless `pasta`) deployment, only when
+  `cmis_admin_listen` is set. Multi-node clusters use host networking and need no
+  published port.
+
+### Upgrade note
+- Setting `cmis_admin_listen` changes `cmis.env` (and, single-node, the Quadlet
+  unit), so the service restarts on the node that receives the change.
+
 ## [0.12.2] - 2026-11-04
 
 ### Fixed

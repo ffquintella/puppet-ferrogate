@@ -133,6 +133,24 @@
 #   blocklist checked on admin password changes, in addition to the small
 #   embedded list. `undef` (the default) leaves it unset. Provision it out of
 #   band, identically on every node.
+# @param cmis_admin_listen
+#   `CMIS_ADMIN_LISTEN` — socket address (inside the container) of the dedicated
+#   admin listener that serves the `Admin` gRPC service (login, accounts,
+#   sessions, enrollment). `undef` (the default) leaves it unset, so CMIS keeps
+#   its built-in `127.0.0.1:8444`: reachable only from the host itself (e.g. over
+#   an SSH tunnel). The `Admin` service is **never** served on the main listener
+#   (`cmis_listen`); it answers `UNIMPLEMENTED admin_listener_only` there, so a
+#   remote admin client (CLI, tray admin app) can only work against this
+#   listener. Set it to `'0.0.0.0:8444'` to make it reachable from the network.
+#   **This widens the administrative attack surface**: restrict the port with a
+#   host firewall to the management network and prefer `CMIS_ADMIN_CLIENT_CA`
+#   (mTLS). Clients pin the certificate's SPKI, so the admin listener should use
+#   the same certificate as the main one (the default).
+# @param cmis_admin_port
+#   Host and container port published for the admin listener on a **single-node**
+#   (rootless `pasta`) deployment, and only when `cmis_admin_listen` is set. Must
+#   match the port in `cmis_admin_listen`. Ignored on a multi-node cluster, which
+#   uses host networking and binds the address directly.
 # @param cmis_cluster_peers
 #   CMIS High Availability (F05) — the Raft peer set this node belongs to. CMIS
 #   keeps every durable store (issued SVIDs, host allowlists, pending allowlist
@@ -330,6 +348,8 @@ class ferrogate (
   Optional[Integer[345600, 2592000]] $cmis_allowlist_ttl_secs = undef,
   Optional[Stdlib::Unixpath]       $cmis_admin_pepper_file = undef,
   Optional[Stdlib::Unixpath]       $cmis_admin_password_blocklist_file = undef,
+  Optional[String[1]]              $cmis_admin_listen = undef,
+  Stdlib::Port                     $cmis_admin_port = 8444,
   Hash[Integer[1], Struct[{
       'raft_addr' => String[1],
       'api_addr'  => String[1],
@@ -503,7 +523,15 @@ class ferrogate (
     undef   => [],
     default => ["CMIS_ADMIN_PASSWORD_BLOCKLIST_FILE=${cmis_admin_password_blocklist_file}"],
   }
-  $_cmis_admin_env = ($_cmis_admin_pepper_line + $_cmis_admin_blocklist_line).join("\n")
+  $_cmis_admin_listen_line = $cmis_admin_listen ? {
+    undef   => [],
+    default => ["CMIS_ADMIN_LISTEN=${cmis_admin_listen}"],
+  }
+  $_cmis_admin_env = (
+    $_cmis_admin_pepper_line + $_cmis_admin_blocklist_line + $_cmis_admin_listen_line
+  ).join("\n")
+  $_cmis_admin_listen = $cmis_admin_listen
+  $_cmis_admin_port   = $cmis_admin_port
   # CMIS HA: render the peer set as CMIS_CLUSTER_PEERS' `id=raft,api;...` form.
   # Iterate the sorted key array (not a two-arg hash lambda) for a deterministic
   # spec the test evaluator can render. Empty hash ⇒ '' ⇒ single-node cluster.

@@ -475,6 +475,8 @@ Key parameters (see the puppet-strings docs in
 | `cmis_allowlist_ttl_secs` | `undef`      | `CMIS_ALLOWLIST_TTL_SECS` (CMIS ≥ 0.19.12) — signed-allowlist validity in seconds. Unset = binary default (96 h). Range `[96 h, 30 d]`; keep ≤ MIA's `allowlist.max_age_secs`. |
 | `cmis_admin_pepper_file` | `undef` | `CMIS_ADMIN_PEPPER_FILE` — in-container path of the admin password pepper. Unset = no pepper. Identical on every node; set before enrolling the first admin. |
 | `cmis_admin_password_blocklist_file` | `undef` | `CMIS_ADMIN_PASSWORD_BLOCKLIST_FILE` — in-container path of an extra admin password blocklist. Unset = embedded list only. |
+| `cmis_admin_listen` | `undef` | `CMIS_ADMIN_LISTEN` — admin listener address (in-container). Unset = CMIS default `127.0.0.1:8444` (host-local only). The `Admin` service is never served on the main listener, so remote admin clients need this set (e.g. `'0.0.0.0:8444'`) **and** a firewall limiting the port to the management network. |
+| `cmis_admin_port` | `8444` | Port published for the admin listener on single-node deployments, only when `cmis_admin_listen` is set. Must match `cmis_admin_listen`. Ignored on multi-node (host networking). |
 | `cmis_cluster_peers`  | `{}`             | CMIS HA Raft peer set (`id => {raft_addr,api_addr}`). Empty = single-node. See [High Availability](#high-availability-cmis-raft-cluster). |
 | `cmis_node_id`        | `undef`          | This node's id within `cmis_cluster_peers` (required when multi-node). |
 | `cmis_raft_port` / `cmis_api_port` | `9601` / `9602` | Raft + management-API transport ports (single-node `*_ADDR`; published when multi-node). |
