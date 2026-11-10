@@ -203,6 +203,22 @@
 #   other hosts can reach this node; the *advertised* address each peer dials is
 #   still its `cmis_cluster_peers` entry. Only rendered for a multi-node cluster
 #   (single-node binds loopback). Set to a specific host IP to bind one NIC.
+# @param cmis_raft_heartbeat_ms
+#   Raft heartbeat in ms (`CMIS_RAFT_HEARTBEAT_MS`); also the time-to-live of
+#   each `AppendEntries` call. `undef` (default) renders nothing and keeps the
+#   CMIS default (500). Raise it, with both election timeouts, when a slow or
+#   lossy peer link makes a healthy two-node cluster report `not enough for a
+#   quorum`. Multi-node only; must be identical on every node.
+# @param cmis_raft_election_min_ms
+#   Shortest Raft election timeout in ms (`CMIS_RAFT_ELECTION_MIN_MS`). `undef`
+#   keeps the default (1500). Must be at least 3 x the effective heartbeat.
+# @param cmis_raft_election_max_ms
+#   Longest Raft election timeout in ms (`CMIS_RAFT_ELECTION_MAX_MS`, at most
+#   300000). `undef` keeps the default (3000). Must exceed the minimum.
+# @param cmis_raft_allow_aggressive_timeouts
+#   Render `CMIS_RAFT_ALLOW_AGGRESSIVE_TIMEOUTS=true`, which CMIS requires for a
+#   heartbeat below 500 or an election minimum below 1500. Only rendered when
+#   true.
 # @param cmis_peer_tls
 #   Encrypt the inter-node Raft + management transport with TLS
 #   (`CMIS_PEER_TLS=1`) — hiqlite's rustls transport with auto-generated
@@ -360,6 +376,10 @@ class ferrogate (
   Optional[String[16]]             $cmis_raft_secret   = undef,
   Optional[String[16]]             $cmis_api_secret    = undef,
   String[1]                        $cmis_raft_listen   = '0.0.0.0',
+  Optional[Integer[100, 60000]]    $cmis_raft_heartbeat_ms   = undef,
+  Optional[Integer[1]]             $cmis_raft_election_min_ms = undef,
+  Optional[Integer[1, 300000]]     $cmis_raft_election_max_ms = undef,
+  Boolean                          $cmis_raft_allow_aggressive_timeouts = false,
   Boolean                          $cmis_peer_tls      = true,
   Optional[Stdlib::Absolutepath]   $cmis_peer_tls_cert = undef,
   Optional[Stdlib::Absolutepath]   $cmis_peer_tls_key  = undef,
@@ -413,6 +433,20 @@ class ferrogate (
     if !$cmis_raft_secret or !$cmis_api_secret {
       fail('ferrogate: a multi-node CMIS cluster requires both cmis_raft_secret and cmis_api_secret (shared across the fleet).')
     }
+  }
+  # Raft timing: mirror CMIS's own startup checks so a bad value fails the
+  # catalog compile instead of crash-looping the container.
+  $_raft_hb   = pick($cmis_raft_heartbeat_ms, 500)
+  $_raft_emin = pick($cmis_raft_election_min_ms, 1500)
+  $_raft_emax = pick($cmis_raft_election_max_ms, 3000)
+  if $_raft_emin < ($_raft_hb * 3) {
+    fail("ferrogate: cmis_raft_election_min_ms (effective ${_raft_emin}) must be at least 3 x cmis_raft_heartbeat_ms (effective ${_raft_hb}); raising the heartbeat means raising the election timeouts too.")
+  }
+  if $_raft_emax <= $_raft_emin {
+    fail("ferrogate: cmis_raft_election_max_ms (effective ${_raft_emax}) must be greater than cmis_raft_election_min_ms (effective ${_raft_emin}).")
+  }
+  if !$cmis_raft_allow_aggressive_timeouts and ($_raft_hb < 500 or $_raft_emin < 1500) {
+    fail('ferrogate: a heartbeat below 500 or an election minimum below 1500 requires cmis_raft_allow_aggressive_timeouts = true.')
   }
   # Operator-supplied inter-node TLS material is a cert+key pair or nothing.
   if ($cmis_peer_tls_cert and !$cmis_peer_tls_key) or (!$cmis_peer_tls_cert and $cmis_peer_tls_key) {
@@ -638,7 +672,18 @@ class ferrogate (
   } else {
     $_cmis_peer_tls_lines = []
   }
-  $_cmis_ha_env = ($_cmis_ha_base + $_raft_secret_lines + $_api_secret_lines + $_cmis_peer_tls_lines).join("\n")
+  # Raft timing overrides (multi-node only); unset parameters render nothing.
+  if $_cmis_cluster_multinode {
+    $_cmis_raft_timing_lines = [
+      $cmis_raft_heartbeat_ms ? { undef => [], default => ["CMIS_RAFT_HEARTBEAT_MS=${cmis_raft_heartbeat_ms}"] },
+      $cmis_raft_election_min_ms ? { undef => [], default => ["CMIS_RAFT_ELECTION_MIN_MS=${cmis_raft_election_min_ms}"] },
+      $cmis_raft_election_max_ms ? { undef => [], default => ["CMIS_RAFT_ELECTION_MAX_MS=${cmis_raft_election_max_ms}"] },
+      $cmis_raft_allow_aggressive_timeouts ? { true => ['CMIS_RAFT_ALLOW_AGGRESSIVE_TIMEOUTS=true'], default => [] },
+    ].flatten
+  } else {
+    $_cmis_raft_timing_lines = []
+  }
+  $_cmis_ha_env = ($_cmis_ha_base + $_raft_secret_lines + $_api_secret_lines + $_cmis_peer_tls_lines + $_cmis_raft_timing_lines).join("\n")
   $_cmis_tls_enable      = $cmis_tls_enable
   $_cmis_tls_cert        = $cmis_tls_cert
   $_cmis_tls_key         = $cmis_tls_key

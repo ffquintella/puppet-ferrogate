@@ -229,6 +229,15 @@ class { 'ferrogate':
 > ~80 ms of each other — Raft commit latency is on the SVID issuance path. Use
 > an odd peer count (3 or 5) so a quorum survives one (or two) node losses.
 
+> **Raft timing:** on a slow or lossy peer link a healthy two-node cluster can
+> report `not enough for a quorum`. Widen the timing with
+> `cmis_raft_heartbeat_ms`, `cmis_raft_election_min_ms` and
+> `cmis_raft_election_max_ms` (CMIS defaults 500 / 1500 / 3000 ms), identical on
+> every node, e.g. `2000 / 6000 / 12000`. The election minimum must be at least
+> 3 x the heartbeat; values below the defaults need
+> `cmis_raft_allow_aggressive_timeouts => true`. Unset means no change. A third
+> peer is the real fix for fault tolerance.
+
 ## MIA host agent (`ferrogate::mia`)
 
 FerroGate ships the **Machine Identity Agent** as a native host package

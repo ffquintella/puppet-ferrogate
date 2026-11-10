@@ -427,6 +427,52 @@ describe 'ferrogate' do
     # not render faithfully; the env *content* is asserted in acceptance, not
     # here. The structural wiring (published ports) is exercised above.
 
+    context 'with widened Raft timing' do
+      let(:params) do
+        super().merge(
+          cmis_raft_heartbeat_ms:     2000,
+          cmis_raft_election_min_ms:  6000,
+          cmis_raft_election_max_ms:  12_000,
+        )
+      end
+
+      it { is_expected.to compile }
+    end
+
+    context 'rejects a longer heartbeat without matching election timeouts' do
+      let(:params) { super().merge(cmis_raft_heartbeat_ms: 2000) }
+
+      it { is_expected.to compile.and_raise_error(%r{at least 3 x cmis_raft_heartbeat_ms}) }
+    end
+
+    context 'rejects an election maximum not above the minimum' do
+      let(:params) do
+        super().merge(cmis_raft_election_min_ms: 4000, cmis_raft_election_max_ms: 4000)
+      end
+
+      it { is_expected.to compile.and_raise_error(%r{must be greater than cmis_raft_election_min_ms}) }
+    end
+
+    context 'rejects timings below the defaults without the opt-in' do
+      let(:params) do
+        super().merge(cmis_raft_heartbeat_ms: 200, cmis_raft_election_min_ms: 1000)
+      end
+
+      it { is_expected.to compile.and_raise_error(%r{requires cmis_raft_allow_aggressive_timeouts}) }
+    end
+
+    context 'accepts timings below the defaults with the opt-in' do
+      let(:params) do
+        super().merge(
+          cmis_raft_heartbeat_ms:                200,
+          cmis_raft_election_min_ms:             1000,
+          cmis_raft_allow_aggressive_timeouts:   true,
+        )
+      end
+
+      it { is_expected.to compile }
+    end
+
     context 'rejects a missing cmis_node_id' do
       let(:params) do
         { cmis_cluster_peers: { 1 => { 'raft_addr' => 'a:9601', 'api_addr' => 'a:9602' } } }

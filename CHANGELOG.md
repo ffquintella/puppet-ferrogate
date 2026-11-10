@@ -4,6 +4,21 @@ All notable changes to this module are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this module
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.0] - 2026-11-10
+
+### Added
+- **`cmis_raft_heartbeat_ms`**, **`cmis_raft_election_min_ms`**,
+  **`cmis_raft_election_max_ms`** → `CMIS_RAFT_HEARTBEAT_MS`,
+  `CMIS_RAFT_ELECTION_MIN_MS`, `CMIS_RAFT_ELECTION_MAX_MS` (default `undef` =
+  not rendered, CMIS keeps 500 / 1500 / 3000 ms). Widen the Raft timing so a slow
+  or lossy peer link no longer trips `not enough for a quorum` on a healthy
+  two-node cluster (needs FerroGate 0.30.9). Multi-node only; identical on every
+  node. The module fails the catalog when the election minimum is below 3 x the
+  heartbeat or the maximum is not above the minimum.
+- **`cmis_raft_allow_aggressive_timeouts`** (default `false`) →
+  `CMIS_RAFT_ALLOW_AGGRESSIVE_TIMEOUTS=true`, required for a heartbeat below 500
+  or an election minimum below 1500.
+
 ## [0.13.0] - 2026-11-10
 
 ### Added
