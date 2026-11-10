@@ -339,6 +339,47 @@ describe 'ferrogate' do
     end
   end
 
+  context 'CMIS admin listener (cmis_admin_listen)' do
+    let(:facts) { BASE_FACTS }
+
+    context 'by default' do
+      it 'leaves CMIS_ADMIN_LISTEN unset and publishes only the gRPC port' do
+        is_expected.to contain_file('/srv/application-config/ferrogate/cmis.env').without_content(%r{CMIS_ADMIN_LISTEN})
+        is_expected.to contain_ferrogate__instance('cmis').with(ports: ['8443:8443'])
+      end
+    end
+
+    context 'with cmis_admin_listen on a single node' do
+      let(:params) { { cmis_admin_listen: '0.0.0.0:8444' } }
+
+      it 'renders CMIS_ADMIN_LISTEN and publishes the admin port' do
+        is_expected.to contain_file('/srv/application-config/ferrogate/cmis.env').with_content(%r{CMIS_ADMIN_LISTEN=0\.0\.0\.0:8444})
+        is_expected.to contain_ferrogate__instance('cmis').with(ports: ['8443:8443', '8444:8444'])
+      end
+    end
+
+    context 'with cmis_admin_listen on a multi-node cluster' do
+      let(:params) do
+        {
+          cmis_admin_listen: '0.0.0.0:8444',
+          cmis_cluster_peers: {
+            1 => { 'raft_addr' => '10.0.0.1:9601', 'api_addr' => '10.0.0.1:9602' },
+            2 => { 'raft_addr' => '10.0.0.2:9601', 'api_addr' => '10.0.0.2:9602' },
+            3 => { 'raft_addr' => '10.0.0.3:9601', 'api_addr' => '10.0.0.3:9602' },
+          },
+          cmis_node_id:     2,
+          cmis_raft_secret: 'a-shared-raft-secret-16+',
+          cmis_api_secret:  'a-shared-api-secret-16++',
+        }
+      end
+
+      it 'renders CMIS_ADMIN_LISTEN and publishes no ports (host network)' do
+        is_expected.to contain_file('/srv/application-config/ferrogate/cmis.env').with_content(%r{CMIS_ADMIN_LISTEN=0\.0\.0\.0:8444})
+        is_expected.to contain_ferrogate__instance('cmis').with(ports: [], networks: ['host'])
+      end
+    end
+  end
+
   context 'CMIS HA — single-node cluster (default)' do
     let(:facts) { BASE_FACTS }
 

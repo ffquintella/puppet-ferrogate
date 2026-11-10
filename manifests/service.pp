@@ -64,7 +64,13 @@ class ferrogate::service {
       $_cmis_ports    = []
       $_cmis_networks = ['host']
     } else {
-      $_cmis_ports    = [$_cmis_grpc_port]
+      # The admin listener is published only when explicitly exposed
+      # (cmis_admin_listen set); by default it stays on the container loopback.
+      $_cmis_admin_ports = $ferrogate::_cmis_admin_listen ? {
+        undef   => [],
+        default => ["${ferrogate::_cmis_admin_port}:${ferrogate::_cmis_admin_port}"],
+      }
+      $_cmis_ports    = [$_cmis_grpc_port] + $_cmis_admin_ports
       $_cmis_networks = []
     }
 
