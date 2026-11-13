@@ -452,6 +452,23 @@ describe 'ferrogate::mia' do
     },
   }.freeze
 
+  context 'on Windows with helper_require_authenticode => false' do
+    let(:facts) { WINDOWS_FACTS }
+    let(:params) { { helper_require_authenticode: false } }
+
+    it { is_expected.to compile }
+
+    it 'writes require_authenticode = false to mia.toml under [helper]' do
+      is_expected.to contain_file('C:/ProgramData/ferrogate/mia.toml')
+        .with_content(%r{\[helper\]\n(?:.*\n)*?require_authenticode = false})
+    end
+
+    it 'writes FERROGATE_HELPER_REQUIRE_AUTHENTICODE=0 to mia.env' do
+      is_expected.to contain_file('C:/ProgramData/ferrogate/mia.env')
+        .with_content(%r{^FERROGATE_HELPER_REQUIRE_AUTHENTICODE=0$})
+    end
+  end
+
   context 'on Windows with defaults' do
     let(:facts) { WINDOWS_FACTS }
 
@@ -489,6 +506,13 @@ describe 'ferrogate::mia' do
       is_expected.to contain_file('C:/ProgramData/ferrogate/mia.toml')
         .with_content(%r{log = 'info'})
         .without_content(%r{socket = '})
+    end
+
+    it 'renders no require_authenticode by default' do
+      is_expected.to contain_file('C:/ProgramData/ferrogate/mia.toml')
+        .without_content(%r{require_authenticode})
+      is_expected.to contain_file('C:/ProgramData/ferrogate/mia.env')
+        .without_content(%r{REQUIRE_AUTHENTICODE})
     end
 
     it 'does not create a POSIX privilege-drop account (runs as LocalSystem)' do

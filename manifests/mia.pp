@@ -208,6 +208,14 @@
 # @param helper_socket_mode
 #   `FERROGATE_HELPER_SOCKET_MODE` — octal mode (as a string) for the helper
 #   socket. Linux only.
+# @param helper_require_authenticode
+#   `FERROGATE_HELPER_REQUIRE_AUTHENTICODE` / `[helper] require_authenticode` —
+#   **Windows only.** Require a valid Authenticode signature on every local
+#   caller's executable (refused as `untrusted-binary` otherwise). `undef` (the
+#   default) renders nothing, so MIA keeps its default of *requiring* it. Set
+#   `false` for environments whose clients (and `mia` itself) are not
+#   code-signed. Written to both `mia.toml` (what the tray configuration screen
+#   reads) and `mia.env`. Takes effect after the `mia` service restarts.
 # @param allowlist_path
 #   `FERROGATE_ALLOWLIST` — signed CBOR allowlist of vetted local callers. When
 #   unset the helper API denies every caller (fail closed). When set,
@@ -301,6 +309,7 @@ class ferrogate::mia (
   Optional[String[1]]             $cmis_spki_pin          = undef,
   Optional[String[1]]             $helper_socket          = '/run/ferrogate/mia.sock',
   Optional[String[1]]             $helper_socket_mode     = '660',
+  Optional[Boolean]               $helper_require_authenticode = undef,
   Optional[Stdlib::Absolutepath]  $allowlist_path         = undef,
   Optional[Stdlib::Absolutepath]  $allowlist_key          = undef,
   Optional[Integer[1]]            $allowlist_max_age_secs = undef,
@@ -583,6 +592,7 @@ class ferrogate::mia (
         'cmis_spki_pin'          => $cmis_spki_pin,
         'helper_socket'          => $_helper_socket,
         'helper_socket_mode'     => $helper_socket_mode,
+        'helper_require_authenticode' => $helper_require_authenticode,
         'allowlist_path'         => $allowlist_path,
         'allowlist_key'          => $allowlist_key,
         'allowlist_max_age_secs' => $allowlist_max_age_secs,
@@ -618,6 +628,7 @@ class ferrogate::mia (
           'cmis_spki_pin'          => $cmis_spki_pin,
           'helper_socket'          => $_helper_socket,
           'helper_socket_mode'     => $helper_socket_mode,
+          'helper_require_authenticode' => $helper_require_authenticode,
           'allowlist_path'         => $allowlist_path,
           'allowlist_key'          => $allowlist_key,
           'allowlist_max_age_secs' => $allowlist_max_age_secs,

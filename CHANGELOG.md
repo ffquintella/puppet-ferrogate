@@ -4,6 +4,15 @@ All notable changes to this module are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this module
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.0] - 2026-11-13
+
+### Added
+- **`helper_require_authenticode`** → `FERROGATE_HELPER_REQUIRE_AUTHENTICODE` in
+  `mia.env` and `[helper] require_authenticode` in `mia.toml` (default `undef` =
+  not rendered, MIA keeps requiring Authenticode). Windows only. Setting it via
+  `extra_env` reached only `mia.env`, so the tray configuration screen (which
+  reads `mia.toml`) kept showing the option as on.
+
 ## [0.14.0] - 2026-11-10
 
 ### Added
