@@ -549,6 +549,134 @@ describe 'ferrogate::mia' do
     end
   end
 
+  context 'on Windows with a managed source: package installs from it by name' do
+    let(:facts) { WINDOWS_FACTS }
+    let(:params) do
+      {
+        manage_repo:  true,
+        repo_baseurl: 'https://nuget.example.com/ferrogate/',
+      }
+    end
+
+    it { is_expected.to compile }
+
+    it 'passes the registered source name to choco install --source' do
+      is_expected.to contain_package('ferrogate-mia').with(
+        ensure:   'installed',
+        provider: 'chocolatey',
+        source:   'ferrogate-mia',
+      )
+    end
+  end
+
+  context 'on Windows with a Sensitive feed password and a custom source name' do
+    let(:facts) { WINDOWS_FACTS }
+    let(:params) do
+      {
+        manage_repo:       true,
+        repo_baseurl:      'https://nuget.example.com/ferrogate/',
+        repo_user:         'svc-puppet',
+        repo_password:     sensitive('s3cret'),
+        repo_priority:     1,
+        choco_source_name: 'fgv-nuget',
+      }
+    end
+
+    it { is_expected.to compile }
+
+    it 'registers the source under the custom name with the unwrapped password' do
+      is_expected.to contain_chocolateysource('fgv-nuget').with(
+        ensure:   'present',
+        location: 'https://nuget.example.com/ferrogate/',
+        user:     'svc-puppet',
+        password: 's3cret',
+        priority: 1,
+      )
+    end
+
+    it 'installs from the custom source name' do
+      is_expected.to contain_package('ferrogate-mia').with(source: 'fgv-nuget')
+    end
+  end
+
+  context 'on Windows with repo_user but no repo_password' do
+    let(:facts) { WINDOWS_FACTS }
+    let(:params) do
+      {
+        manage_repo:  true,
+        repo_baseurl: 'https://nuget.example.com/ferrogate/',
+        repo_user:    'svc-puppet',
+      }
+    end
+
+    it 'fails compilation with a clear error' do
+      is_expected.to compile.and_raise_error(%r{repo_password is unset})
+    end
+  end
+
+  context 'on Windows with manage_repo off and an explicit package_source' do
+    let(:facts) { WINDOWS_FACTS }
+    let(:params) { { package_source: 'https://other.example.com/nuget/' } }
+
+    it { is_expected.to compile }
+
+    it 'uses the override as the install source' do
+      is_expected.to contain_package('ferrogate-mia').with(source: 'https://other.example.com/nuget/')
+    end
+  end
+
+  context 'on Windows with a pinned version and install_options' do
+    let(:facts) { WINDOWS_FACTS }
+    let(:params) do
+      {
+        package_ensure:  '0.30.28',
+        install_options: ['--ignore-checksums'],
+      }
+    end
+
+    it { is_expected.to compile }
+
+    it 'pins the version and forwards the options to choco' do
+      is_expected.to contain_package('ferrogate-mia').with(
+        ensure:          '0.30.28',
+        install_options: ['--ignore-checksums'],
+      )
+    end
+  end
+
+  context 'on Windows with manage_chocolatey' do
+    let(:facts) { WINDOWS_FACTS }
+    let(:params) { { manage_chocolatey: true } }
+
+    it { is_expected.to compile }
+    it { is_expected.to contain_class('chocolatey') }
+  end
+
+  context 'on Windows without manage_chocolatey (default)' do
+    let(:facts) { WINDOWS_FACTS }
+
+    it 'does not bootstrap Chocolatey and passes no source or options' do
+      is_expected.not_to contain_class('chocolatey')
+      is_expected.to contain_package('ferrogate-mia').with(provider: 'chocolatey')
+    end
+  end
+
+  context 'on RedHat the Windows-only package knobs are ignored' do
+    let(:facts) { MIA_FACTS }
+    let(:params) do
+      {
+        package_source:  'https://other.example.com/nuget/',
+        install_options: ['--ignore-checksums'],
+      }
+    end
+
+    it { is_expected.to compile }
+
+    it 'declares the plain package with no source or install_options' do
+      is_expected.to contain_package('ferrogate-mia').with(ensure: 'installed')
+    end
+  end
+
   context 'with a custom repo on the Debian family' do
     let(:facts) do
       {

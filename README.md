@@ -353,7 +353,9 @@ pre-existing repository. The removal is a no-op on a node that never had one.
 To add a custom `ferrogate-mia` repository, set `manage_repo => true` and
 `repo_baseurl` — a `yumrepo` on the RedHat family, an apt source list on the
 Debian family, or a `chocolateysource` (custom NuGet feed) on Windows, ordered
-before the package:
+before the package. On Windows the package is installed with
+`choco install --source <choco_source_name>`, so credentials stored on the
+source are used (override with `package_source`):
 
 ```puppet
 # RedHat / Debian — RPM/DEB repository
@@ -374,6 +376,18 @@ class { 'ferrogate::mia':
   repo_user     => 'svc-puppet',   # optional, for an authenticated feed
   repo_password => 'feed-secret',  # optional (drive from Hiera/eyaml)
 }
+
+# Windows — authenticated feed, pinned version, Sensitive password
+class { 'ferrogate::mia':
+  cmis_srv       => '_cmis._tcp.prod.example.com',
+  cmis_spki_pin  => '5f2e...c4',
+  manage_repo    => true,
+  repo_baseurl   => 'https://nuget.example.com/ferrogate/',
+  repo_user      => 'svc-puppet',
+  repo_password  => Sensitive(lookup('choco_feed_password')),
+  repo_priority  => 1,
+  package_ensure => '0.30.28',
+}
 ```
 
 | Parameter (key ones)   | Default                     | Description                                              |
@@ -385,6 +399,10 @@ class { 'ferrogate::mia':
 | `repo_gpgkey`          | `undef`                     | GPG key (RedHat URL/path; Debian `signed-by` keyring).  |
 | `repo_user` / `repo_password` | `undef`              | Windows — auth for the custom Chocolatey source/feed.   |
 | `repo_priority`        | `undef`                     | Windows — priority of the custom Chocolatey source.     |
+| `choco_source_name`    | `'ferrogate-mia'`           | Windows — name the Chocolatey source is registered under.|
+| `package_source`       | `undef`                     | Windows — `choco install --source`; defaults to the managed source name. |
+| `install_options`      | `[]`                        | Windows — extra flags for `choco install`.              |
+| `manage_chocolatey`    | `false`                     | Windows — `include chocolatey` to bootstrap Chocolatey first. |
 | `config_dir`           | OS default                  | `/etc/ferrogate` (Linux) / `C:/ProgramData/ferrogate` (Windows). |
 | `manage_toml`          | `true`                      | Also render `<config_dir>/mia.toml` so `mia test` works.|
 | `manage_allowlist_dir` | `true`                      | Ensure the directory of `allowlist_path` exists (needed for `allowlist_fetch`). |

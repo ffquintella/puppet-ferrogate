@@ -132,10 +132,34 @@
 #   Passed to `chocolateysource`. `undef` for an anonymous feed.
 # @param repo_password
 #   Windows only — password for an authenticated Chocolatey source / NuGet feed.
-#   Set together with `repo_user`.
+#   Required when `repo_user` is set (and `manage_repo` is `true`). Accepts a
+#   plain String (e.g. an eyaml-decrypted Hiera value) or a `Sensitive` String;
+#   it is wrapped/unwrapped internally. Chocolatey cannot read a configured
+#   password back, so the source resource reports a change on every run once
+#   this is set.
 # @param repo_priority
 #   Windows only — priority of the Chocolatey source (lower wins). `undef`
-#   leaves Chocolatey's default.
+#   leaves Chocolatey's default (0 = unprioritized, so the public community feed
+#   competes on equal footing). Set `1` to make this feed authoritative.
+# @param choco_source_name
+#   Windows only — name the Chocolatey source is registered under. Also the value
+#   handed to `choco install --source` by default when `manage_repo` is `true`,
+#   so credentials attached to the source apply to the install. Defaults to
+#   `'ferrogate-mia'`.
+# @param manage_chocolatey
+#   Windows only — `include chocolatey` (puppetlabs/chocolatey) to bootstrap
+#   Chocolatey before the source and package are managed. Defaults to `false`:
+#   Chocolatey is assumed present (site baseline). Note the stock bootstrap
+#   reaches out to the public community feed, usually the opposite of what a site
+#   with an internal NuGet mirror wants.
+# @param package_source
+#   Windows only — value passed to `choco install --source`, overriding the
+#   default. The default is `choco_source_name` when this class manages the
+#   source (`manage_repo => true`), so configured credentials are picked up, and
+#   unset otherwise (Chocolatey's configured sources are searched).
+# @param install_options
+#   Windows only — extra flags handed to `choco install`, e.g.
+#   `['--ignore-checksums']` or `[{'--installargs' => 'quiet'}]`.
 # @param service_name
 #   Name of the service shipped by the package (systemd unit / Windows service).
 # @param manage_service
@@ -290,8 +314,12 @@ class ferrogate::mia (
   Optional[String[1]]             $repo_release           = undef,
   String[1]                       $repo_components        = 'main',
   Optional[String[1]]             $repo_user              = undef,
-  Optional[String[1]]             $repo_password          = undef,
+  Optional[Variant[String[1], Sensitive[String[1]]]] $repo_password = undef,
   Optional[Integer[0]]            $repo_priority          = undef,
+  String[1]                       $choco_source_name      = 'ferrogate-mia',
+  Boolean                         $manage_chocolatey      = false,
+  Optional[String[1]]             $package_source         = undef,
+  Array[Variant[String[1], Hash[String[1], String]]] $install_options = [],
   String[1]                       $service_name           = 'mia',
   Boolean                         $manage_service         = true,
   Enum['running', 'stopped']      $service_ensure         = 'running',
@@ -394,6 +422,46 @@ class ferrogate::mia (
     $_helper_socket = $helper_socket
   }
 
+  # Chocolatey cannot attach a username to a source without a password; fail
+  # fast rather than registering a feed that 401s on every run.
+  if $_windows and $manage_repo and $repo_user and !$repo_password {
+    fail('ferrogate::mia: repo_user is set but repo_password is unset.')
+  }
+
+  # Unwrap the feed password only at the point of use (the chocolateysource
+  # property); accept both a plain String and a Sensitive String.
+  $_repo_password = $repo_password ? {
+    Sensitive => $repo_password.unwrap,
+    default   => $repo_password,
+  }
+
+  # Windows only: optionally bootstrap Chocolatey itself ahead of the source and
+  # the package.
+  if $_windows and $manage_chocolatey {
+    include chocolatey
+  }
+
+  # `choco install --source`: prefer the source *name* over the raw URL so the
+  # credentials stored on the registered source apply to the install. Without a
+  # managed source nothing is passed unless `package_source` says so, leaving
+  # Chocolatey's configured sources in charge. Windows only.
+  if $_windows {
+    $_package_source = $package_source ? {
+      undef   => $manage_repo ? {
+        true    => $choco_source_name,
+        default => undef,
+      },
+      default => $package_source,
+    }
+    $_install_options = $install_options.empty ? {
+      true    => undef,
+      default => $install_options,
+    }
+  } else {
+    $_package_source  = undef
+    $_install_options = undef
+  }
+
   # --- Optional custom package repository (off by default) ------------------
   # When `manage_repo` is false the package is expected to resolve through a
   # repository already present on the node, so we do not add one. We do, however,
@@ -463,15 +531,18 @@ class ferrogate::mia (
       'windows': {
         # Register a custom Chocolatey source (private NuGet feed) the package is
         # pulled from. Requires the puppetlabs/chocolatey module for the type.
-        chocolateysource { 'ferrogate-mia':
+        chocolateysource { $choco_source_name:
           ensure   => present,
           location => $repo_baseurl,
           user     => $repo_user,
-          password => $repo_password,
+          password => $_repo_password,
           priority => $repo_priority,
         }
+        if $manage_chocolatey {
+          Class['chocolatey'] -> Chocolateysource[$choco_source_name]
+        }
         if $manage_package {
-          Chocolateysource['ferrogate-mia'] -> Package[$package_name]
+          Chocolateysource[$choco_source_name] -> Package[$package_name]
         }
       }
       default: {
@@ -500,11 +571,14 @@ class ferrogate::mia (
         }
       }
       'windows': {
-        chocolateysource { 'ferrogate-mia':
+        chocolateysource { $choco_source_name:
           ensure => absent,
         }
+        if $manage_chocolatey {
+          Class['chocolatey'] -> Chocolateysource[$choco_source_name]
+        }
         if $manage_package {
-          Chocolateysource['ferrogate-mia'] -> Package[$package_name]
+          Chocolateysource[$choco_source_name] -> Package[$package_name]
         }
       }
       default: {
@@ -537,8 +611,13 @@ class ferrogate::mia (
 
   if $manage_package {
     package { $package_name:
-      ensure   => $package_ensure,
-      provider => $_package_provider,
+      ensure          => $package_ensure,
+      provider        => $_package_provider,
+      source          => $_package_source,
+      install_options => $_install_options,
+    }
+    if $_windows and $manage_chocolatey {
+      Class['chocolatey'] -> Package[$package_name]
     }
   }
 

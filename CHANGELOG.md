@@ -4,6 +4,29 @@ All notable changes to this module are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this module
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.16.0] - 2026-11-19
+
+### Added
+- **`ferrogate::mia` on Windows now installs the way `bastionvault::windows`
+  does** (Chocolatey package from a private NuGet feed):
+  - **`choco_source_name`** (default `'ferrogate-mia'`) — name the Chocolatey
+    source is registered under.
+  - **`package_source`** — value for `choco install --source`. Defaults to the
+    registered source name when `manage_repo => true`, so credentials stored on
+    the source apply to the install; unset otherwise.
+  - **`install_options`** — extra flags for `choco install`
+    (e.g. `['--ignore-checksums']`).
+  - **`manage_chocolatey`** (default `false`) — `include chocolatey` and order it
+    before the source and the package.
+  - **`repo_password`** now also accepts `Sensitive[String]` (plain strings from
+    Hiera/eyaml keep working).
+  - Compile-time failure when `repo_user` is set without `repo_password`.
+
+### Changed
+- With `manage_repo => true` on Windows the package is now installed with
+  `--source <choco_source_name>` (previously every configured source was
+  searched). Set `package_source` to override. Linux behaviour is unchanged.
+
 ## [0.15.0] - 2026-11-13
 
 ### Added
