@@ -204,6 +204,47 @@
 #   directly (so `mia test` and other interactive invocations, which do not see
 #   the service's systemd `EnvironmentFile`, are configured). Defaults to `true`.
 #   Set `false` to manage only `mia.env`.
+# @param status_group
+#   Group of *status readers* created by the package (`mia status`, `mia test`,
+#   the tray). Defaults to `ferrogate-status` on Linux and `FerroGateStatus` on
+#   Windows. Also the default group owner of `mia.toml` on Linux (see
+#   `toml_group`).
+# @param client_group
+#   Group of helper-API *clients* created by the package. Defaults to
+#   `ferrogate-clients` on Linux (Debian family package only) and
+#   `FerroGateClients` on Windows.
+# @param operators_group
+#   Group of operators created by the Debian package. Defaults to
+#   `ferrogate-operators`. Linux only.
+# @param status_group_members
+#   Users added (additively — existing members are never removed) to
+#   `status_group`. On Linux each is added with `usermod -aG` and takes effect at
+#   the user's next login; on Windows via the group resource (`DOMAIN\user`).
+# @param client_group_members
+#   Users added to `client_group` (helper-API access; the allowlist still gates
+#   token minting). Same semantics as `status_group_members`.
+# @param operators_group_members
+#   Users added to `operators_group`. Linux only.
+# @param toml_group
+#   Group allowed to read `mia.toml`. On Linux it is the file's group owner;
+#   on Windows it receives a read ACE (see `manage_toml_acl`). The Linux package's
+#   post-install script sets it to `status_group` so desktop users can run
+#   `mia test`; Puppet used to rewrite it as `root:root 0640`, locking them out.
+#   Defaults to `status_group`; on Linux set `'root'` to restore the old
+#   behaviour. The file stays `0640`.
+# @param manage_toml_acl
+#   Windows only — grant `toml_group` (default `status_group`, `FerroGateStatus`)
+#   read access to `mia.toml` with `icacls`. The installer makes
+#   `%ProgramData%\\FerroGate` administrator-only (protected DACL), so a file
+#   created there is readable only by SYSTEM and Administrators and the group's
+#   members could not run `mia test`/`mia status`. Only the file receives the
+#   ACE — the directory stays locked; the mia.env file is never opened up.
+# @param manage_service_acl
+#   Linux only — keep a read ACL for the service account (`user_name`) on
+#   `mia.toml`. The hardened daemon drops to that account and clears its
+#   supplementary groups, so a SIGHUP reload can only read the file through this
+#   ACL (the package grants it, but Puppet rewriting the file drops it). Needs
+#   `setfacl`/`getfacl` (the `acl` package).
 # @param rust_log
 #   `RUST_LOG` tracing filter for the agent.
 # @param cmis_endpoint
@@ -331,6 +372,15 @@ class ferrogate::mia (
   Boolean                         $manage_config_dir      = true,
   Boolean                         $manage_allowlist_dir   = true,
   Boolean                         $manage_toml            = true,
+  Optional[String[1]]             $status_group           = undef,
+  Optional[String[1]]             $client_group           = undef,
+  String[1]                       $operators_group        = 'ferrogate-operators',
+  Array[String[1]]                $status_group_members   = [],
+  Array[String[1]]                $client_group_members   = [],
+  Array[String[1]]                $operators_group_members = [],
+  Optional[String[1]]             $toml_group             = undef,
+  Boolean                         $manage_service_acl     = true,
+  Boolean                         $manage_toml_acl        = true,
   String[1]                       $rust_log               = 'info',
   Optional[String[1]]             $cmis_endpoint          = undef,
   Optional[String[1]]             $cmis_srv               = undef,
@@ -404,6 +454,10 @@ class ferrogate::mia (
     $_file_mode        = undef
     $_service_provider = 'windows'
     $_package_provider = 'chocolatey'
+    $_status_group     = pick($status_group, 'FerroGateStatus')
+    $_client_group     = pick($client_group, 'FerroGateClients')
+    $_toml_group       = undef
+    $_toml_acl_group   = pick($toml_group, $_status_group)
   } else {
     $_owner            = 'root'
     $_group            = 'root'
@@ -411,6 +465,10 @@ class ferrogate::mia (
     $_file_mode        = '0640'
     $_service_provider = 'systemd'
     $_package_provider = undef
+    $_status_group     = pick($status_group, 'ferrogate-status')
+    $_client_group     = pick($client_group, 'ferrogate-clients')
+    $_toml_group       = pick($toml_group, $_status_group)
+    $_toml_acl_group   = undef
   }
 
   # The helper-API default (`/run/ferrogate/mia.sock`) is a Unix socket; on
@@ -698,7 +756,7 @@ class ferrogate::mia (
     file { $toml_file:
       ensure  => file,
       owner   => $_owner,
-      group   => $_group,
+      group   => $_toml_group,
       mode    => $_file_mode,
       content => epp('ferrogate/mia-client.toml.epp', {
           'rust_log'               => $rust_log,
@@ -737,6 +795,80 @@ class ferrogate::mia (
     Package[$package_name] -> File[$env_file]
     if $manage_toml {
       Package[$package_name] -> File[$toml_file]
+    }
+  }
+
+  # The agent daemon drops to `user_name` and clears supplementary groups, so a
+  # SIGHUP reload reads `mia.toml` only through a file ACL. The package sets it,
+  # but Puppet replaces the file on every content change, discarding the ACL.
+  if !$_windows and $manage_toml and $manage_service_acl {
+    exec { 'ferrogate-mia-toml-acl':
+      command  => "setfacl --modify user:${user_name}:r-- -- ${toml_file}",
+      unless   => "getfacl --absolute-names ${toml_file} 2>/dev/null | grep -q '^user:${user_name}:r'",
+      path     => ['/usr/sbin', '/usr/bin', '/sbin', '/bin'],
+      provider => shell,
+      require  => File[$toml_file],
+    }
+  }
+
+  # Windows: the installer locks %ProgramData%\\FerroGate to SYSTEM and
+  # Administrators, and a file created there inherits that, so the status-group
+  # members the installer enrols could not read mia.toml. Grant the group read on
+  # the file only (never the directory, never mia.env); `icacls /grant` is
+  # additive and the `unless` probe keeps the run idempotent and self-healing.
+  if $_windows and $manage_toml and $manage_toml_acl {
+    # icacls goes through the Win32 file APIs, which accept `/` separators.
+    $_toml_win  = $toml_file
+    $_icacls    = 'C:\\Windows\\System32\\icacls.exe'
+    exec { 'ferrogate-mia-toml-acl':
+      command  => "${_icacls} \"${_toml_win}\" /grant \"${_toml_acl_group}:(R)\"",
+      unless   => "C:\\Windows\\System32\\cmd.exe /s /c \"${_icacls} \"${_toml_win}\" | C:\\Windows\\System32\\findstr.exe /i /c:\"${_toml_acl_group}:(R)\"\"",
+      provider => 'windows',
+      require  => File[$toml_file],
+    }
+    if $manage_package {
+      Package[$package_name] -> Exec['ferrogate-mia-toml-acl']
+    }
+  }
+
+  # Group membership. The package creates the groups; membership is additive —
+  # nobody is ever removed.
+  if $_windows {
+    $_win_groups = {
+      $_status_group => $status_group_members,
+      $_client_group => $client_group_members,
+    }
+    $_win_groups.each |$_grp, $_members| {
+      unless $_members.empty {
+        group { $_grp:
+          ensure          => present,
+          provider        => 'windows_adsi',
+          members         => $_members,
+          auth_membership => false,
+        }
+        if $manage_package {
+          Package[$package_name] -> Group[$_grp]
+        }
+      }
+    }
+  } else {
+    $_lin_groups = {
+      $_status_group   => $status_group_members,
+      $_client_group   => $client_group_members,
+      $operators_group => $operators_group_members,
+    }
+    $_lin_groups.each |$_grp, $_members| {
+      $_members.each |$_member| {
+        exec { "ferrogate-mia-${_grp}-${_member}":
+          command  => "usermod -aG ${_grp} -- ${_member}",
+          unless   => "id -nG -- ${_member} | tr ' ' '\\n' | grep -qx -- ${_grp}",
+          path     => ['/usr/sbin', '/usr/bin', '/sbin', '/bin'],
+          provider => shell,
+        }
+        if $manage_package {
+          Package[$package_name] -> Exec["ferrogate-mia-${_grp}-${_member}"]
+        }
+      }
     }
   }
 

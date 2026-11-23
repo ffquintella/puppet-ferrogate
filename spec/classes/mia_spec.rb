@@ -65,7 +65,7 @@ describe 'ferrogate::mia' do
       is_expected.to contain_file('/etc/ferrogate/mia.toml').with(
         ensure: 'file',
         owner:  'root',
-        group:  'root',
+        group:  'ferrogate-status',
         mode:   '0640',
       )
     end
@@ -546,6 +546,125 @@ describe 'ferrogate::mia' do
         user:     'svc-puppet',
         priority: 1,
       )
+    end
+  end
+
+  context 'on Linux the mia.toml is readable by the package status group' do
+    let(:facts) { MIA_FACTS }
+
+    it 'is owned root:ferrogate-status, mode 0640' do
+      is_expected.to contain_file('/etc/ferrogate/mia.toml').with(
+        owner: 'root',
+        group: 'ferrogate-status',
+        mode:  '0640',
+      )
+    end
+
+    it 'keeps mia.env root:root' do
+      is_expected.to contain_file('/etc/ferrogate/mia.env').with(group: 'root')
+    end
+
+    it 'restores the service-account read ACL the package set' do
+      is_expected.to contain_exec('ferrogate-mia-toml-acl').with(
+        command: 'setfacl --modify user:_ferrogate:r-- -- /etc/ferrogate/mia.toml',
+      )
+    end
+  end
+
+  context 'on Linux with toml_group overridden and the ACL unmanaged' do
+    let(:facts) { MIA_FACTS }
+    let(:params) { { toml_group: 'root', manage_service_acl: false } }
+
+    it { is_expected.to compile }
+
+    it 'uses the override group and declares no ACL exec' do
+      is_expected.to contain_file('/etc/ferrogate/mia.toml').with(group: 'root')
+      is_expected.not_to contain_exec('ferrogate-mia-toml-acl')
+    end
+  end
+
+  context 'on Linux adding users to the MIA groups' do
+    let(:facts) { MIA_FACTS }
+    let(:params) do
+      {
+        status_group_members:    ['alice'],
+        client_group_members:    ['alice', 'bob'],
+        operators_group_members: ['bob'],
+      }
+    end
+
+    it { is_expected.to compile }
+
+    it 'adds each user to the right group, additively' do
+      is_expected.to contain_exec('ferrogate-mia-ferrogate-status-alice')
+        .with_command('usermod -aG ferrogate-status -- alice')
+      is_expected.to contain_exec('ferrogate-mia-ferrogate-clients-alice')
+        .with_command('usermod -aG ferrogate-clients -- alice')
+      is_expected.to contain_exec('ferrogate-mia-ferrogate-clients-bob')
+        .with_command('usermod -aG ferrogate-clients -- bob')
+      is_expected.to contain_exec('ferrogate-mia-ferrogate-operators-bob')
+        .with_command('usermod -aG ferrogate-operators -- bob')
+    end
+  end
+
+  context 'on Windows adding users to the MIA local groups' do
+    let(:facts) { WINDOWS_FACTS }
+    let(:params) do
+      {
+        status_group_members: ['CORP\\alice'],
+        client_group_members: ['CORP\\bob'],
+      }
+    end
+
+    it { is_expected.to compile }
+
+    it 'manages membership additively on the installer-created groups' do
+      is_expected.to contain_group('FerroGateStatus').with(
+        members:         ['CORP\\alice'],
+        auth_membership: false,
+        provider:        'windows_adsi',
+      )
+      is_expected.to contain_group('FerroGateClients').with(members: ['CORP\\bob'])
+    end
+  end
+
+  context 'on Windows the status group can read mia.toml' do
+    let(:facts) { WINDOWS_FACTS }
+
+    it 'grants FerroGateStatus read on the file only, via icacls' do
+      is_expected.to contain_exec('ferrogate-mia-toml-acl')
+        .with_command('C:\\Windows\\System32\\icacls.exe "C:/ProgramData/ferrogate/mia.toml" /grant "FerroGateStatus:(R)"')
+        .with_provider('windows')
+    end
+
+    it 'does not set a POSIX group on the file' do
+      is_expected.to contain_file('C:/ProgramData/ferrogate/mia.toml').without_group
+    end
+  end
+
+  context 'on Windows with a custom toml_group' do
+    let(:facts) { WINDOWS_FACTS }
+    let(:params) { { toml_group: 'CORP\\mia-readers' } }
+
+    it 'grants that group instead of FerroGateStatus' do
+      is_expected.to contain_exec('ferrogate-mia-toml-acl')
+        .with_command('C:\\Windows\\System32\\icacls.exe "C:/ProgramData/ferrogate/mia.toml" /grant "CORP\\mia-readers:(R)"')
+    end
+  end
+
+  context 'on Windows with manage_toml_acl disabled' do
+    let(:facts) { WINDOWS_FACTS }
+    let(:params) { { manage_toml_acl: false } }
+
+    it { is_expected.not_to contain_exec('ferrogate-mia-toml-acl') }
+  end
+
+  context 'on Windows with no members' do
+    let(:facts) { WINDOWS_FACTS }
+
+    it 'declares no group resources' do
+      is_expected.not_to contain_group('FerroGateStatus')
+      is_expected.not_to contain_group('FerroGateClients')
     end
   end
 

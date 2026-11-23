@@ -4,6 +4,31 @@ All notable changes to this module are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this module
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.17.0] - 2026-11-23
+
+### Fixed
+- **`mia.toml` is readable by the users the installer enrols.** The package
+  post-install script gives `mia*.toml` to the `ferrogate-status` group and a read
+  ACL to `_ferrogate`, but Puppet rewrote the file as `root:root 0640` (dropping
+  both), so `mia test` / `mia status` / the tray failed for desktop users and a
+  SIGHUP reload failed for the daemon. On Linux `mia.toml` is now
+  `root:<toml_group> 0640` (default `status_group`, `ferrogate-status`) and an
+  `exec` re-applies the service-account ACL (`manage_service_acl`).
+- **Windows:** the installer makes `%ProgramData%\\FerroGate` administrator-only,
+  so `mia.toml` was readable only by SYSTEM/Administrators and `FerroGateStatus`
+  members could not run `mia test`/`mia status`. An `icacls` exec now grants
+  `toml_group` (default `FerroGateStatus`) read on that one file
+  (`manage_toml_acl`); the directory and `mia.env` stay locked.
+
+### Added
+- **`status_group_members`, `client_group_members`, `operators_group_members`** —
+  add users (additively; nobody is removed) to the package groups
+  `ferrogate-status` / `ferrogate-clients` / `ferrogate-operators` on Linux
+  (`usermod -aG`) and `FerroGateStatus` / `FerroGateClients` on Windows
+  (`windows_adsi` group, `DOMAIN\\user`). Group names are overridable via
+  `status_group`, `client_group`, `operators_group`.
+- **`toml_group`**, **`manage_service_acl`** (see Fixed).
+
 ## [0.16.0] - 2026-11-19
 
 ### Added
