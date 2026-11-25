@@ -152,13 +152,38 @@ class ferrogate::install {
   # --- Pull the image -------------------------------------------------------
   if $ferrogate::_pull_image {
     if $runtime == 'podman' {
+      # Registry credentials for the rootless pull, via an explicit auth file
+      # (REGISTRY_AUTH_FILE) so it does not collide with the ~/.config/containers
+      # directories managed by ferrogate::instance. The auths key is the registry
+      # host only; podman matches it for any namespace beneath it.
+      $_auth_file = "/home/${user}/.ferrogate-registry-auth.json"
+      if $ferrogate::_registry_username != undef {
+        $_reg_pw = $ferrogate::_registry_password ? {
+          Sensitive => $ferrogate::_registry_password.unwrap,
+          default   => $ferrogate::_registry_password,
+        }
+        $_reg_host = split($ferrogate::registry, '/')[0]
+        $_reg_auth = base64('encode', "${ferrogate::_registry_username}:${_reg_pw}", 'strict')
+
+        file { $_auth_file:
+          ensure  => file,
+          owner   => $user,
+          group   => $group,
+          mode    => '0600',
+          content => Sensitive("{\"auths\":{\"${_reg_host}\":{\"auth\":\"${_reg_auth}\"}}}\n"),
+          before  => Exec['ferrogate-pull-image'],
+        }
+        $_pull_env = ["XDG_RUNTIME_DIR=${_xdg}", "HOME=/home/${user}", "REGISTRY_AUTH_FILE=${_auth_file}"]
+      } else {
+        $_pull_env = ["XDG_RUNTIME_DIR=${_xdg}", "HOME=/home/${user}"]
+      }
       # Pull rootless, into the dedicated user's storage.
       exec { 'ferrogate-pull-image':
         command     => "podman pull ${image}",
         path        => ['/usr/bin', '/bin'],
         user        => $user,
         cwd         => "/home/${user}",
-        environment => ["XDG_RUNTIME_DIR=${_xdg}", "HOME=/home/${user}"],
+        environment => $_pull_env,
         unless      => "podman image exists ${image}",
         timeout     => 600,
         require     => Exec['ferrogate-podman-migrate'],

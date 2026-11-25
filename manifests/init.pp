@@ -26,6 +26,12 @@
 #   Optional registry host (and namespace) the image is pulled from, e.g.
 #   `'ghcr.io/felipe-quintella'`. When `undef`/empty the bare
 #   `<image_name>:<image_tag>` reference is used.
+# @param registry_username
+#   Optional login for the registry host in `registry`. When set together with
+#   `registry_password`, a podman auth file is written for the service user and
+#   used for the image pull. podman runtime only.
+# @param registry_password
+#   Password/token for `registry_username` (Sensitive, e.g. via eyaml).
 # @param image_name
 #   Image repository name.
 # @param image_tag
@@ -339,6 +345,8 @@ class ferrogate (
   Enum['auto', 'podman', 'docker'] $runtime            = 'auto',
   Boolean                          $manage_runtime     = true,
   Optional[String[1]]              $registry           = undef,
+  Optional[String[1]]              $registry_username  = undef,
+  Optional[Variant[Sensitive[String[1]], String[1]]] $registry_password = undef,
   String[1]                        $image_name         = 'ferrogate',
   String[1]                        $image_tag          = 'latest',
   Boolean                          $pull_image         = true,
@@ -471,6 +479,16 @@ class ferrogate (
     $_cmis_tls_cert_cn = 'cmis.ferrogate.internal'
   }
 
+  # --- Registry credentials -------------------------------------------------
+  $_reg_user_set = $registry_username != undef
+  $_reg_pw_set   = $registry_password != undef
+  if $_reg_user_set != $_reg_pw_set {
+    fail('ferrogate: registry_username and registry_password must be set together.')
+  }
+  if $_reg_user_set and !$registry {
+    fail('ferrogate: registry_username requires registry to be set.')
+  }
+
   # --- Resolve the image reference ------------------------------------------
   if $registry and $registry != '' {
     $_image = "${registry}/${image_name}:${image_tag}"
@@ -510,6 +528,8 @@ class ferrogate (
   $_pod_group          = "${group}-pod"
   $_manage_runtime     = $manage_runtime
   $_pull_image         = $pull_image
+  $_registry_username  = $registry_username
+  $_registry_password  = $registry_password
   $_manage_selinux     = $manage_selinux
   $_selinux_relabel    = $selinux_relabel
   $_rust_log           = $rust_log

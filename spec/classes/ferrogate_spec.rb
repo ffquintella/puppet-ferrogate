@@ -12,6 +12,43 @@ BASE_FACTS = {
 }.freeze
 
 describe 'ferrogate' do
+  context 'with registry credentials (podman)' do
+    let(:facts) { BASE_FACTS }
+    let(:params) do
+      {
+        registry:          'repo.example.com:5000/ns',
+        registry_username: 'reader',
+        registry_password: 'secret',
+      }
+    end
+
+    it { is_expected.to compile }
+
+    it 'writes a 0600 auth file keyed by the registry host only' do
+      is_expected.to contain_file('/home/ferrogate/.ferrogate-registry-auth.json').with(
+        owner: 'ferrogate',
+        mode:  '0600',
+      ).that_comes_before('Exec[ferrogate-pull-image]')
+    end
+
+    it 'points the pull at the auth file' do
+      is_expected.to contain_exec('ferrogate-pull-image').with_environment(
+        [
+          'XDG_RUNTIME_DIR=/run/user/10001',
+          'HOME=/home/ferrogate',
+          'REGISTRY_AUTH_FILE=/home/ferrogate/.ferrogate-registry-auth.json',
+        ],
+      )
+    end
+  end
+
+  context 'with a username but no password' do
+    let(:facts) { BASE_FACTS }
+    let(:params) { { registry: 'r:5000', registry_username: 'reader' } }
+
+    it { is_expected.to compile.and_raise_error(%r{must be set together}) }
+  end
+
   context 'with podman defaults (CMIS only; MIA off)' do
     let(:facts) { BASE_FACTS }
 
