@@ -714,6 +714,23 @@ describe 'ferrogate::mia' do
     end
   end
 
+  context 'on Windows the status group can write the synced allowlist' do
+    let(:facts) { WINDOWS_FACTS }
+
+    it 'grants Modify on allowlist.synced.cbor in the config dir only' do
+      is_expected.to contain_exec('ferrogate-mia-synced-allowlist-acl')
+        .with_command('C:\\Windows\\System32\\icacls.exe "C:/ProgramData/ferrogate/allowlist*.synced.cbor" /grant "FerroGateStatus:(M)"')
+        .with_provider('windows')
+    end
+  end
+
+  context 'on Windows with manage_allowlist_acl disabled' do
+    let(:facts) { WINDOWS_FACTS }
+    let(:params) { { manage_allowlist_acl: false } }
+
+    it { is_expected.not_to contain_exec('ferrogate-mia-synced-allowlist-acl') }
+  end
+
   context 'on Windows with the allowlist inside config_dir' do
     let(:facts) { WINDOWS_FACTS }
     let(:params) do

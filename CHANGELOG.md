@@ -4,6 +4,13 @@ All notable changes to this module are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this module
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.1] - 2026-11-25
+
+### Fixed
+- **Windows:** `toml_group` also gets Modify on the agent's synced allowlist
+  `<config_dir>/allowlist.synced.cbor` (and `allowlist-<env>.synced.cbor`), via
+  `manage_allowlist_acl`; skipped while the file does not exist yet.
+
 ## [0.19.0] - 2026-11-25
 
 ### Added

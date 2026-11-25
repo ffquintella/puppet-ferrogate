@@ -247,7 +247,9 @@
 #   the file is never created here, so an empty allowlist is never written).
 #   Windows: `icacls` grants the group Modify on the file (when present) and on
 #   its directory — inherited by the directory's children unless that directory is
-#   `config_dir`, so `mia.env` is never opened up. Needs `allowlist_path`; set
+#   `config_dir`, so `mia.env` is never opened up. Windows also grants Modify on
+#   the agent's synced body `<config_dir>/allowlist*.synced.cbor`. Directory/file
+#   grants need `allowlist_path`; set
 #   `false` to leave the permissions to the package/operator.
 # @param manage_service_acl
 #   Linux only — keep a read ACL for the service account (`user_name`) on
@@ -906,6 +908,27 @@ class ferrogate::mia (
       if $_manage_allowlist_dir {
         File[$_allowlist_dir] -> File[$allowlist_path]
       }
+    }
+  }
+
+  # Windows: the agent keeps the CMIS-synced allowlist body beside
+  # `allowlist.state` in the config dir (`allowlist.synced.cbor`, or
+  # `allowlist-<env>.synced.cbor`). Let the group write it. Only that file is
+  # touched (never mia.env); the wildcard covers the per-environment name and the
+  # exec is skipped while no synced file exists yet.
+  if $_windows and $manage_allowlist_acl {
+    $_sy_file = "${_config_dir}/allowlist*.synced.cbor"
+    $_sy_cmd  = 'C:\\Windows\\System32\\cmd.exe'
+    $_sy_ic   = 'C:\\Windows\\System32\\icacls.exe'
+    $_sy_find = 'C:\\Windows\\System32\\findstr.exe'
+    exec { 'ferrogate-mia-synced-allowlist-acl':
+      command  => "${_sy_ic} \"${_sy_file}\" /grant \"${_toml_acl_group}:(M)\"",
+      onlyif   => "${_sy_cmd} /s /c \"if exist \"${_sy_file}\" (exit 0) else (exit 1)\"",
+      unless   => "${_sy_cmd} /s /c \"${_sy_ic} \"${_sy_file}\" | ${_sy_find} /i /r /c:\"${_toml_acl_group}:.*(M)\"\"",
+      provider => 'windows',
+    }
+    if $manage_package {
+      Package[$package_name] -> Exec['ferrogate-mia-synced-allowlist-acl']
     }
   }
 
