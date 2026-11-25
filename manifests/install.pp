@@ -139,12 +139,13 @@ class ferrogate::install {
     # exists (the failed first pull initialises it); a no-op once the image is
     # present, so it stops running after the first successful pull.
     exec { 'ferrogate-podman-migrate':
-      command     => 'podman system migrate',
+      # Run through sudo, not `exec user =>`: Puppet only sets the *effective*
+      # uid, so podman sees real uid 0, assumes root storage and fails with
+      # "mkdir /var/lib/containers/storage/libpod: permission denied".
+      command     => "/usr/bin/sudo -u ${user} /usr/bin/env XDG_RUNTIME_DIR=${_xdg} HOME=/home/${user} /usr/bin/podman system migrate",
       path        => ['/usr/bin', '/bin'],
-      user        => $user,
       cwd         => "/home/${user}",
-      environment => ["XDG_RUNTIME_DIR=${_xdg}", "HOME=/home/${user}"],
-      unless      => "podman image exists ${image}",
+      unless      => "/usr/bin/sudo -u ${user} /usr/bin/env XDG_RUNTIME_DIR=${_xdg} HOME=/home/${user} /usr/bin/podman image exists ${image}",
       require     => Exec['ferrogate-enable-linger'],
     }
   }
@@ -173,18 +174,17 @@ class ferrogate::install {
           content => Sensitive("{\"auths\":{\"${_reg_host}\":{\"auth\":\"${_reg_auth}\"}}}\n"),
           before  => Exec['ferrogate-pull-image'],
         }
-        $_pull_env = ["XDG_RUNTIME_DIR=${_xdg}", "HOME=/home/${user}", "REGISTRY_AUTH_FILE=${_auth_file}"]
+        $_pull_env = "XDG_RUNTIME_DIR=${_xdg} HOME=/home/${user} REGISTRY_AUTH_FILE=${_auth_file}"
       } else {
-        $_pull_env = ["XDG_RUNTIME_DIR=${_xdg}", "HOME=/home/${user}"]
+        $_pull_env = "XDG_RUNTIME_DIR=${_xdg} HOME=/home/${user}"
       }
+      $_podman_as = "/usr/bin/sudo -u ${user} /usr/bin/env ${_pull_env} /usr/bin/podman"
       # Pull rootless, into the dedicated user's storage.
       exec { 'ferrogate-pull-image':
-        command     => "podman pull ${image}",
+        command     => "${_podman_as} pull ${image}",
         path        => ['/usr/bin', '/bin'],
-        user        => $user,
         cwd         => "/home/${user}",
-        environment => $_pull_env,
-        unless      => "podman image exists ${image}",
+        unless      => "${_podman_as} image exists ${image}",
         timeout     => 600,
         require     => Exec['ferrogate-podman-migrate'],
       }

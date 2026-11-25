@@ -32,12 +32,8 @@ describe 'ferrogate' do
     end
 
     it 'points the pull at the auth file' do
-      is_expected.to contain_exec('ferrogate-pull-image').with_environment(
-        [
-          'XDG_RUNTIME_DIR=/run/user/10001',
-          'HOME=/home/ferrogate',
-          'REGISTRY_AUTH_FILE=/home/ferrogate/.ferrogate-registry-auth.json',
-        ],
+      is_expected.to contain_exec('ferrogate-pull-image').with_command(
+        %r{REGISTRY_AUTH_FILE=/home/ferrogate/\.ferrogate-registry-auth\.json /usr/bin/podman pull },
       )
     end
   end
@@ -87,16 +83,14 @@ describe 'ferrogate' do
 
     it 'migrates podman storage before pulling so the new subids take effect' do
       is_expected.to contain_exec('ferrogate-podman-migrate').with(
-        command: 'podman system migrate',
-        user:    'ferrogate',
+        command: '/usr/bin/sudo -u ferrogate /usr/bin/env XDG_RUNTIME_DIR=/run/user/10001 HOME=/home/ferrogate /usr/bin/podman system migrate',
       )
       is_expected.to contain_exec('ferrogate-pull-image').that_requires('Exec[ferrogate-podman-migrate]')
     end
 
     it 'pulls the image rootless as the service user from its own home dir' do
       is_expected.to contain_exec('ferrogate-pull-image').with(
-        command: 'podman pull ferrogate:latest',
-        user:    'ferrogate',
+        command: '/usr/bin/sudo -u ferrogate /usr/bin/env XDG_RUNTIME_DIR=/run/user/10001 HOME=/home/ferrogate /usr/bin/podman pull ferrogate:latest',
         cwd:     '/home/ferrogate',
       )
     end
@@ -886,9 +880,7 @@ describe 'ferrogate' do
     it { is_expected.to compile }
 
     it 'composes the fully-qualified image reference' do
-      is_expected.to contain_exec('ferrogate-pull-image').with(
-        command: 'podman pull registry.example.com/fgv/ferrogate:1.4.0',
-      )
+      is_expected.to contain_exec('ferrogate-pull-image').with_command(%r{/usr/bin/podman pull registry\.example\.com/fgv/ferrogate:1\.4\.0$})
     end
   end
 
