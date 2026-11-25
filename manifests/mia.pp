@@ -911,24 +911,47 @@ class ferrogate::mia (
     }
   }
 
-  # Windows: the agent keeps the CMIS-synced allowlist body beside
-  # `allowlist.state` in the config dir (`allowlist.synced.cbor`, or
-  # `allowlist-<env>.synced.cbor`). Let the group write it. Only that file is
-  # touched (never mia.env); the wildcard covers the per-environment name and the
-  # exec is skipped while no synced file exists yet.
+  # Windows: the agent keeps the CMIS-synced allowlist body and its state in the
+  # config dir (`allowlist.synced.cbor` / `allowlist.state`) and writes them atomically, i.e. it creates new
+  # files there. So the group gets Modify on the config dir itself (not inherited:
+  # mia.env gets no ACE) and on the two files when they exist. Explicit names, no
+  # wildcards: icacls mis-parsed `C:/dir/allowlist*.x` as `C:allowlist*.x`. Each
+  # file exec is guarded by an existence check so a first run before the agent has
+  # synced anything is a no-op instead of a failure.
   if $_windows and $manage_allowlist_acl {
-    $_sy_file = "${_config_dir}/allowlist*.synced.cbor"
+    $_sy_dir  = regsubst($_config_dir, '/', '\\', 'G')
     $_sy_cmd  = 'C:\\Windows\\System32\\cmd.exe'
     $_sy_ic   = 'C:\\Windows\\System32\\icacls.exe'
     $_sy_find = 'C:\\Windows\\System32\\findstr.exe'
+
+    exec { 'ferrogate-mia-config-dir-modify-acl':
+      command  => "${_sy_ic} \"${_config_dir}\" /grant \"${_toml_acl_group}:(M)\"",
+      unless   => "${_sy_cmd} /s /c \"${_sy_ic} \"${_config_dir}\" | ${_sy_find} /i /r /c:\"${_toml_acl_group}:.*(M)\"\"",
+      provider => 'windows',
+    }
+    if $manage_package {
+      Package[$package_name] -> Exec['ferrogate-mia-config-dir-modify-acl']
+    }
+    if $manage_config_dir {
+      File[$_config_dir] -> Exec['ferrogate-mia-config-dir-modify-acl']
+    }
+
+    $_sy_file = "${_config_dir}/allowlist.synced.cbor"
     exec { 'ferrogate-mia-synced-allowlist-acl':
       command  => "${_sy_ic} \"${_sy_file}\" /grant \"${_toml_acl_group}:(M)\"",
       onlyif   => "${_sy_cmd} /s /c \"if exist \"${_sy_file}\" (exit 0) else (exit 1)\"",
       unless   => "${_sy_cmd} /s /c \"${_sy_ic} \"${_sy_file}\" | ${_sy_find} /i /r /c:\"${_toml_acl_group}:.*(M)\"\"",
       provider => 'windows',
+      require  => Exec['ferrogate-mia-config-dir-modify-acl'],
     }
-    if $manage_package {
-      Package[$package_name] -> Exec['ferrogate-mia-synced-allowlist-acl']
+
+    $_st_file = "${_config_dir}/allowlist.state"
+    exec { 'ferrogate-mia-state-allowlist-acl':
+      command  => "${_sy_ic} \"${_st_file}\" /grant \"${_toml_acl_group}:(M)\"",
+      onlyif   => "${_sy_cmd} /s /c \"if exist \"${_st_file}\" (exit 0) else (exit 1)\"",
+      unless   => "${_sy_cmd} /s /c \"${_sy_ic} \"${_st_file}\" | ${_sy_find} /i /r /c:\"${_toml_acl_group}:.*(M)\"\"",
+      provider => 'windows',
+      require  => Exec['ferrogate-mia-config-dir-modify-acl'],
     }
   }
 

@@ -714,13 +714,25 @@ describe 'ferrogate::mia' do
     end
   end
 
-  context 'on Windows the status group can write the synced allowlist' do
+  context 'on Windows the status group can write the synced allowlist and state' do
     let(:facts) { WINDOWS_FACTS }
 
-    it 'grants Modify on allowlist.synced.cbor in the config dir only' do
+    it 'grants Modify on the config dir itself (so files can be created), not inherited' do
+      is_expected.to contain_exec('ferrogate-mia-config-dir-modify-acl')
+        .with_command('C:\\Windows\\System32\\icacls.exe "C:/ProgramData/ferrogate" /grant "FerroGateStatus:(M)"')
+    end
+
+    it 'grants Modify on allowlist.synced.cbor ' do
       is_expected.to contain_exec('ferrogate-mia-synced-allowlist-acl')
-        .with_command('C:\\Windows\\System32\\icacls.exe "C:/ProgramData/ferrogate/allowlist*.synced.cbor" /grant "FerroGateStatus:(M)"')
+        .with_command('C:\\Windows\\System32\\icacls.exe "C:/ProgramData/ferrogate/allowlist.synced.cbor" /grant "FerroGateStatus:(M)"')
+        .with_onlyif(%r{if exist "C:/ProgramData/ferrogate/allowlist\.synced\.cbor"})
         .with_provider('windows')
+    end
+
+    it 'grants Modify on allowlist.state only when it exists' do
+      is_expected.to contain_exec('ferrogate-mia-state-allowlist-acl')
+        .with_command('C:\\Windows\\System32\\icacls.exe "C:/ProgramData/ferrogate/allowlist.state" /grant "FerroGateStatus:(M)"')
+        .with_onlyif(%r{if exist "C:/ProgramData/ferrogate/allowlist\.state"})
     end
   end
 
@@ -729,6 +741,8 @@ describe 'ferrogate::mia' do
     let(:params) { { manage_allowlist_acl: false } }
 
     it { is_expected.not_to contain_exec('ferrogate-mia-synced-allowlist-acl') }
+    it { is_expected.not_to contain_exec('ferrogate-mia-state-allowlist-acl') }
+    it { is_expected.not_to contain_exec('ferrogate-mia-config-dir-modify-acl') }
   end
 
   context 'on Windows with the allowlist inside config_dir' do

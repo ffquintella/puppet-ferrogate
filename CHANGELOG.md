@@ -4,6 +4,18 @@ All notable changes to this module are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this module
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.2] - 2026-11-25
+
+### Fixed
+- **Windows:** the synced-allowlist ACL exec failed (`icacls` returned 2,
+  "C:allowlist.synced.cbor: file not found"): icacls mis-parsed the wildcard path.
+  It now uses the explicit file names (no wildcards; `allowlist-<env>.*` variants
+  are no longer covered), and each file exec is guarded by an `if exist` check so a host that has not synced yet is a no-op, not an error.
+- **Windows:** `toml_group` now also gets Modify on `allowlist.state` and on the
+  config directory itself (not inherited, `mia.env` gets no ACE) so the agent's
+  group can create the synced/state files. Note: Modify on the directory lets the
+  group delete or replace entries in it.
+
 ## [0.19.1] - 2026-11-25
 
 ### Fixed
