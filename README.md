@@ -410,7 +410,7 @@ class { 'ferrogate::mia':
 | `operators_group_members` | `[]`                     | Users added to `ferrogate-operators` (Linux, Debian package). |
 | `toml_group`           | `status_group`              | Group that may read `mia.toml`: Linux group owner (`0640`) / Windows read ACE. |
 | `manage_service_acl`   | `true`                      | Linux — keep the read ACL for `_ferrogate` on `mia.toml` (needs `acl`). |
-| `manage_toml_acl`      | `true`                      | Windows — `icacls` read grant on `mia.toml` for `toml_group` (default `FerroGateStatus`); the config dir is admin-only. |
+| `manage_toml_acl`      | `true`                      | Windows — `icacls` read grant on `mia.toml` plus non-inherited read/traverse on the config dir for `toml_group` (default `FerroGateStatus`); `mia.env` stays admin-only. |
 | `manage_allowlist_dir` | `true`                      | Ensure the directory of `allowlist_path` exists (needed for `allowlist_fetch`). |
 | `manage_user`          | `true`                      | Create the `_ferrogate` privilege-drop account (Linux). |
 | `cmis_endpoint`        | `undef`                     | `FERROGATE_CMIS_ENDPOINT` — the CMIS server URL.        |

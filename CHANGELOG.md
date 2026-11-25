@@ -4,6 +4,13 @@ All notable changes to this module are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this module
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.2] - 2026-11-25
+
+### Fixed
+- **Windows:** `toml_group` now also gets read + traverse (`(RX)`, no
+  inheritance) on the config directory itself, not only on `mia.toml`
+  (`manage_toml_acl`). `mia.env` and other children stay administrator-only.
+
 ## [0.18.1] - 2026-11-25
 
 ### Fixed

@@ -829,6 +829,23 @@ class ferrogate::mia (
     if $manage_package {
       Package[$package_name] -> Exec['ferrogate-mia-toml-acl']
     }
+
+    # The directory itself also needs the group: read + traverse (RX), applied to
+    # the folder only (no (OI)/(CI) inheritance), so mia.env and other children
+    # stay administrator-only.
+    $_dir_win = $_config_dir
+    exec { 'ferrogate-mia-dir-acl':
+      command  => "${_icacls} \"${_dir_win}\" /grant \"${_toml_acl_group}:(RX)\"",
+      unless   => "C:\\Windows\\System32\\cmd.exe /s /c \"${_icacls} \"${_dir_win}\" | C:\\Windows\\System32\\findstr.exe /i /c:\"${_toml_acl_group}:(RX)\"\"",
+      provider => 'windows',
+      before   => Exec['ferrogate-mia-toml-acl'],
+    }
+    if $manage_package {
+      Package[$package_name] -> Exec['ferrogate-mia-dir-acl']
+    }
+    if $manage_config_dir {
+      File[$_config_dir] -> Exec['ferrogate-mia-dir-acl']
+    }
   }
 
   # Group membership. The package creates the groups; membership is additive —

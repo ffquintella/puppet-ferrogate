@@ -637,6 +637,12 @@ describe 'ferrogate::mia' do
         .with_provider('windows')
     end
 
+    it 'grants FerroGateStatus read+traverse on the directory only (no inheritance)' do
+      is_expected.to contain_exec('ferrogate-mia-dir-acl')
+        .with_command('C:\\Windows\\System32\\icacls.exe "C:/ProgramData/ferrogate" /grant "FerroGateStatus:(RX)"')
+        .with_provider('windows')
+    end
+
     it 'does not set a POSIX group on the file' do
       is_expected.to contain_file('C:/ProgramData/ferrogate/mia.toml').without_group
     end
@@ -657,6 +663,7 @@ describe 'ferrogate::mia' do
     let(:params) { { manage_toml_acl: false } }
 
     it { is_expected.not_to contain_exec('ferrogate-mia-toml-acl') }
+    it { is_expected.not_to contain_exec('ferrogate-mia-dir-acl') }
   end
 
   context 'on Windows with no members' do
