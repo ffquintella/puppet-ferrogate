@@ -12,6 +12,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   service user and passed to the pull via `REGISTRY_AUTH_FILE`. Both must be set
   together and require `registry`.
 
+### Fixed
+- `mia` templates tested `false` parameters with `=~ NotUndef` and a `true =>`
+  selector, which dropped/misrendered `helper_require_authenticode => false`
+  under the Regent evaluator; now `!= undef` and an explicit `if`/`else`.
+- Specs: added the `admin` volume to the expected cmis mounts, the `baseapp`
+  fixture (symlink), and a non-colliding title for the `ferrogate::instance` spec.
+
 ## [0.17.0] - 2026-11-23
 
 ### Fixed

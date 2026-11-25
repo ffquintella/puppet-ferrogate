@@ -6,7 +6,9 @@ require 'spec_helper'
 # unit files are exercised indirectly through the class spec's
 # `contain_ferrogate__instance` parameter assertions.
 describe 'ferrogate::instance' do
-  let(:title) { 'cmis' }
+  # `include ferrogate` already declares the real `cmis` instance, so probe
+  # with a different title/command to avoid a duplicate declaration.
+  let(:title) { 'probe' }
 
   context 'with podman (rootless Quadlet unit)' do
     let(:facts) do
@@ -23,7 +25,7 @@ describe 'ferrogate::instance' do
     let(:pre_condition) { 'include ferrogate' }
     let(:params) do
       {
-        command:  'cmis',
+        command:  'probe',
         env_file: '/srv/application-config/ferrogate/cmis.env',
         volumes:  ['/srv/application-logs/ferrogate:/opt/ferrogate/logs'],
         ports:    ['8443:8443'],
@@ -49,7 +51,7 @@ describe 'ferrogate::instance' do
     let(:pre_condition) { "class { 'ferrogate': runtime => 'docker' }" }
     let(:params) do
       {
-        command:  'cmis',
+        command:  'probe',
         env_file: '/srv/application-config/ferrogate/cmis.env',
         volumes:  ['/srv/application-logs/ferrogate:/opt/ferrogate/logs'],
         ports:    ['8443:8443'],

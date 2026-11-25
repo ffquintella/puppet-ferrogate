@@ -123,6 +123,7 @@ describe 'ferrogate' do
     ['/srv/application-data/ferrogate/audit',
      '/srv/application-data/ferrogate/raft',
      '/srv/application-data/ferrogate/issuer',
+     '/srv/application-data/ferrogate/admin',
      '/srv/application-logs/ferrogate'].each do |dir|
       it "manages volume directory #{dir} owned by the container-mapped id" do
         is_expected.to contain_file(dir).with(
@@ -158,6 +159,7 @@ describe 'ferrogate' do
           '/srv/application-data/ferrogate/audit:/var/lib/ferrogate/audit',
           '/srv/application-data/ferrogate/raft:/var/lib/ferrogate/raft',
           '/srv/application-data/ferrogate/issuer:/var/lib/ferrogate/issuer',
+          '/srv/application-data/ferrogate/admin:/var/lib/ferrogate/admin',
           '/srv/application-config/ferrogate/tls:/etc/ferrogate/tls', # TLS on by default
         ],
       )
@@ -274,6 +276,7 @@ describe 'ferrogate' do
           '/srv/application-data/ferrogate/audit:/var/lib/ferrogate/audit',
           '/srv/application-data/ferrogate/raft:/var/lib/ferrogate/raft',
           '/srv/application-data/ferrogate/issuer:/var/lib/ferrogate/issuer',
+          '/srv/application-data/ferrogate/admin:/var/lib/ferrogate/admin',
           '/srv/application-config/ferrogate/tls:/etc/ferrogate/tls',
         ],
       )
@@ -642,6 +645,7 @@ describe 'ferrogate' do
           '/srv/application-data/ferrogate/audit:/var/lib/ferrogate/audit',
           '/srv/application-data/ferrogate/raft:/var/lib/ferrogate/raft',
           '/srv/application-data/ferrogate/issuer:/var/lib/ferrogate/issuer',
+          '/srv/application-data/ferrogate/admin:/var/lib/ferrogate/admin',
           '/srv/application-config/ferrogate/tls:/etc/ferrogate/tls',
           '/srv/application-config/ferrogate/peer-tls:/etc/ferrogate/peer-tls',
         ],
@@ -799,6 +803,7 @@ describe 'ferrogate' do
           '/srv/application-data/ferrogate/audit:/var/lib/ferrogate/audit',
           '/srv/application-data/ferrogate/raft:/var/lib/ferrogate/raft',
           '/srv/application-data/ferrogate/issuer:/var/lib/ferrogate/issuer',
+          '/srv/application-data/ferrogate/admin:/var/lib/ferrogate/admin',
         ],
       )
     end

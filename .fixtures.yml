@@ -5,4 +5,5 @@ fixtures:
     concat: "puppetlabs/concat"
     chocolatey: "puppetlabs/chocolatey"
   symlinks:
+    baseapp: "#{source_dir}/../ffquintella-baseapp"
     ferrogate: "#{source_dir}"

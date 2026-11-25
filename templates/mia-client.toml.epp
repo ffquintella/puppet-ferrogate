@@ -41,7 +41,7 @@ srv = '<%= $cmis_srv %>'
 spki_pin = '<%= $cmis_spki_pin %>'
 <% } -%>
 <% } -%>
-<% if $helper_socket or $helper_socket_mode or $helper_require_authenticode =~ NotUndef { -%>
+<% if $helper_socket or $helper_socket_mode or $helper_require_authenticode != undef { -%>
 
 [helper]
 <% if $helper_socket { -%>
@@ -50,11 +50,11 @@ socket = '<%= $helper_socket %>'
 <% if $helper_socket_mode { -%>
 socket_mode = '<%= $helper_socket_mode %>'
 <% } -%>
-<% if $helper_require_authenticode =~ NotUndef { -%>
+<% if $helper_require_authenticode != undef { -%>
 require_authenticode = <%= $helper_require_authenticode %>
 <% } -%>
 <% } -%>
-<% if $allowlist_path or $allowlist_key or $allowlist_max_age_secs or $allowlist_fetch =~ NotUndef or $allowlist_propose =~ NotUndef or $allowlist_propose_interval_secs { -%>
+<% if $allowlist_path or $allowlist_key or $allowlist_max_age_secs or $allowlist_fetch != undef or $allowlist_propose != undef or $allowlist_propose_interval_secs { -%>
 
 [allowlist]
 <% if $allowlist_path { -%>
@@ -63,13 +63,13 @@ path = '<%= $allowlist_path %>'
 <% if $allowlist_key { -%>
 key = '<%= $allowlist_key %>'
 <% } -%>
-<% if $allowlist_fetch =~ NotUndef { -%>
+<% if $allowlist_fetch != undef { -%>
 fetch = <%= $allowlist_fetch %>
 <% } -%>
 <% if $allowlist_max_age_secs { -%>
 max_age_secs = <%= $allowlist_max_age_secs %>
 <% } -%>
-<% if $allowlist_propose =~ NotUndef { -%>
+<% if $allowlist_propose != undef { -%>
 propose = <%= $allowlist_propose %>
 <% } -%>
 <% if $allowlist_propose_interval_secs { -%>
