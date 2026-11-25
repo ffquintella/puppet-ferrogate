@@ -300,6 +300,13 @@
 # @param allowlist_key
 #   `FERROGATE_ALLOWLIST_KEY` — trusted CMIS enrollment public key used to
 #   verify the allowlist signature. Required whenever `allowlist_path` is set.
+# @param allowlist_key_base64
+#   Base64 of the (binary) enrollment public key. When set, the module writes the
+#   decoded bytes to `allowlist_key` and makes it readable by the ferrogate groups
+#   (Windows: `icacls` read for `status_group` and `client_group`; Linux: `0644`,
+#   group `toml_group`). Whitespace/line breaks in the value are ignored, so a
+#   folded YAML scalar works. Requires `allowlist_key`. Leave `undef` to provision
+#   the key out of band.
 # @param allowlist_max_age_secs
 #   `FERROGATE_ALLOWLIST_MAX_AGE_SECS` / `[allowlist] max_age_secs` — maximum
 #   accepted allowlist age, in seconds.
@@ -403,6 +410,7 @@ class ferrogate::mia (
   Optional[Boolean]               $helper_require_authenticode = undef,
   Optional[Stdlib::Absolutepath]  $allowlist_path         = undef,
   Optional[Stdlib::Absolutepath]  $allowlist_key          = undef,
+  Optional[String[1]]             $allowlist_key_base64   = undef,
   Optional[Integer[1]]            $allowlist_max_age_secs = undef,
   Optional[Boolean]               $allowlist_fetch        = undef,
   Optional[Boolean]               $allowlist_propose      = undef,
@@ -420,6 +428,10 @@ class ferrogate::mia (
   # rejects a path with no key, so fail fast here with a clearer message.
   if $allowlist_path and !$allowlist_key {
     fail('ferrogate::mia: allowlist_key is required whenever allowlist_path is set.')
+  }
+
+  if $allowlist_key_base64 and !$allowlist_key {
+    fail('ferrogate::mia: allowlist_key_base64 requires allowlist_key (the destination path).')
   }
 
   # fetch/propose act on the allowlist body at `allowlist_path` (fetch writes it,
@@ -952,6 +964,46 @@ class ferrogate::mia (
       unless   => "${_sy_cmd} /s /c \"${_sy_ic} \"${_st_file}\" | ${_sy_find} /i /r /c:\"${_toml_acl_group}:.*(M)\"\"",
       provider => 'windows',
       require  => Exec['ferrogate-mia-config-dir-modify-acl'],
+    }
+  }
+
+  # Enrollment public key delivered from Hiera as base64 (it is binary, so it
+  # cannot live in a plain YAML string). Public material: readable by the
+  # ferrogate groups, writable only by the administrators.
+  if $allowlist_key and $allowlist_key_base64 {
+    $_key_dir = dirname($allowlist_key)
+    file { $allowlist_key:
+      ensure  => file,
+      content => Binary($allowlist_key_base64.regsubst('\\s', '', 'G'), '%B'),
+      owner   => $_owner,
+      group   => $_toml_group,
+      mode    => $_windows ? {
+        true    => undef,
+        default => '0644',
+      },
+    }
+    if $manage_package {
+      Package[$package_name] -> File[$allowlist_key]
+    }
+    if $manage_config_dir and $_key_dir == $_config_dir {
+      File[$_config_dir] -> File[$allowlist_key]
+    }
+    if $_manage_allowlist_dir and $_key_dir == $_allowlist_dir {
+      File[$_allowlist_dir] -> File[$allowlist_key]
+    }
+
+    if $_windows {
+      $_key_ic   = 'C:\\Windows\\System32\\icacls.exe'
+      $_key_cmd  = 'C:\\Windows\\System32\\cmd.exe'
+      $_key_find = 'C:\\Windows\\System32\\findstr.exe'
+      unique([$_status_group, $_client_group, $_toml_acl_group]).each |String $_g| {
+        exec { "ferrogate-mia-allowlist-key-acl-${_g}":
+          command  => "${_key_ic} \"${allowlist_key}\" /grant \"${_g}:(R)\"",
+          unless   => "${_key_cmd} /s /c \"${_key_ic} \"${allowlist_key}\" | ${_key_find} /i /c:\"${_g}:(R)\"\"",
+          provider => 'windows',
+          require  => File[$allowlist_key],
+        }
+      }
     }
   }
 

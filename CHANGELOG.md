@@ -4,6 +4,14 @@ All notable changes to this module are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this module
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.20.0] - 2026-11-25
+
+### Added
+- **`allowlist_key_base64`**: base64 of the binary enrollment public key. The
+  module writes it to `allowlist_key` and makes it readable by the ferrogate
+  groups (Windows: `icacls` `(R)` for `status_group`, `client_group` and
+  `toml_group`; Linux: `0644`, group `toml_group`). Requires `allowlist_key`.
+
 ## [0.19.2] - 2026-11-25
 
 ### Fixed

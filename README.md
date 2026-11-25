@@ -419,6 +419,7 @@ class { 'ferrogate::mia':
 | `helper_socket`        | `'/run/ferrogate/mia.sock'` | Helper-API socket; its presence enables the helper API. |
 | `allowlist_path`       | `undef`                     | Signed CBOR caller allowlist (requires `allowlist_key`).|
 | `allowlist_key`        | `undef`                     | Enrollment public key that verifies the allowlist.      |
+| `allowlist_key_base64` | `undef`                     | Base64 of the key; the module writes it to `allowlist_key` and grants the ferrogate groups read. |
 | `allowlist_max_age_secs` | `undef`                   | Max accepted allowlist age (seconds).                   |
 | `allowlist_fetch`      | `undef`                     | Pull this host's allowlist from CMIS each start, by EK-UUID (needs `allowlist_path`). |
 | `allowlist_propose`    | `undef`                     | A2 bootstrap only — propose this host to CMIS; remove after approval. |

@@ -931,4 +931,38 @@ describe 'ferrogate::mia' do
         .with_content(%r{deb \[signed-by=/etc/apt/keyrings/ferrogate\.gpg\] https://repo\.example\.com/ferrogate/apt noble main})
     end
   end
+
+  context 'on Windows with allowlist_key_base64' do
+    let(:facts) { WINDOWS_FACTS }
+    let(:params) do
+      {
+        allowlist_path:       'C:/ProgramData/ferrogate/allowlist.cbor',
+        allowlist_key:        'C:/ProgramData/ferrogate/allowlist.pub',
+        allowlist_key_base64: "AAEC\nAwQF ",
+      }
+    end
+
+    it { is_expected.to compile }
+
+    it 'writes the decoded key bytes' do
+      is_expected.to contain_file('C:/ProgramData/ferrogate/allowlist.pub')
+        .with_ensure('file')
+        .with_content(Puppet::Pops::Types::PBinaryType::Binary.from_base64('AAECAwQF'))
+    end
+
+    %w[FerroGateStatus FerroGateClients].each do |g|
+      it "grants #{g} read on the key" do
+        is_expected.to contain_exec("ferrogate-mia-allowlist-key-acl-#{g}")
+          .with_command(%r{allowlist\.pub" /grant "#{g}:\(R\)"})
+          .with_provider('windows')
+      end
+    end
+  end
+
+  context 'with allowlist_key_base64 but no allowlist_key' do
+    let(:facts) { MIA_FACTS }
+    let(:params) { { allowlist_key_base64: 'AAEC' } }
+
+    it { is_expected.to compile.and_raise_error(%r{allowlist_key_base64 requires allowlist_key}) }
+  end
 end
