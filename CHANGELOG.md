@@ -4,6 +4,14 @@ All notable changes to this module are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this module
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.1] - 2026-11-25
+
+### Fixed
+- `podman system migrate` and the image pull now run via `sudo -u <user>`
+  instead of `exec user =>`, which only set the effective uid. Podman saw real
+  uid 0, used root storage and failed with permission denied on
+  `/var/lib/containers/storage/libpod`.
+
 ## [0.18.0] - 2026-11-25
 
 ### Added
