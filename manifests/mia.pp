@@ -239,6 +239,16 @@
 #   created there is readable only by SYSTEM and Administrators and the group's
 #   members could not run `mia test`/`mia status`. Only the file receives the
 #   ACE — the directory stays locked; the mia.env file is never opened up.
+# @param manage_allowlist_acl
+#   Let `toml_group` (default `status_group`) update the allowlist at
+#   `allowlist_path`. Linux: the allowlist directory becomes `root:<toml_group>`
+#   `2775` (setgid, so files the daemon recreates keep the group) and, when the
+#   file exists, it is set to group `<toml_group>` `0664` (the body is signed;
+#   the file is never created here, so an empty allowlist is never written).
+#   Windows: `icacls` grants the group Modify on the file (when present) and on
+#   its directory — inherited by the directory's children unless that directory is
+#   `config_dir`, so `mia.env` is never opened up. Needs `allowlist_path`; set
+#   `false` to leave the permissions to the package/operator.
 # @param manage_service_acl
 #   Linux only — keep a read ACL for the service account (`user_name`) on
 #   `mia.toml`. The hardened daemon drops to that account and clears its
@@ -381,6 +391,7 @@ class ferrogate::mia (
   Optional[String[1]]             $toml_group             = undef,
   Boolean                         $manage_service_acl     = true,
   Boolean                         $manage_toml_acl        = true,
+  Boolean                         $manage_allowlist_acl   = true,
   String[1]                       $rust_log               = 'info',
   Optional[String[1]]             $cmis_endpoint          = undef,
   Optional[String[1]]             $cmis_srv               = undef,
@@ -701,11 +712,18 @@ class ferrogate::mia (
   # config_dir.
   $_manage_allowlist_dir = $allowlist_path and $manage_allowlist_dir and !($manage_config_dir and $_allowlist_dir == $_config_dir)
   if $_manage_allowlist_dir {
+    if !$_windows and $manage_allowlist_acl {
+      $_allowlist_dir_group = $_toml_group
+      $_allowlist_dir_mode  = '2775'
+    } else {
+      $_allowlist_dir_group = $_group
+      $_allowlist_dir_mode  = $_dir_mode
+    }
     file { $_allowlist_dir:
       ensure => directory,
       owner  => $_owner,
-      group  => $_group,
-      mode   => $_dir_mode,
+      group  => $_allowlist_dir_group,
+      mode   => $_allowlist_dir_mode,
     }
     if $manage_package {
       Package[$package_name] -> File[$_allowlist_dir]
@@ -845,6 +863,49 @@ class ferrogate::mia (
     }
     if $manage_config_dir {
       File[$_config_dir] -> Exec['ferrogate-mia-dir-acl']
+    }
+  }
+
+  # Let the status group update the allowlist. Linux: group-own the file when it
+  # exists (no `ensure`, so it is never created empty). Windows: Modify via icacls.
+  if $allowlist_path and $manage_allowlist_acl {
+    if $_windows {
+      $_al_icacls = 'C:\\Windows\\System32\\icacls.exe'
+      $_al_cmd    = 'C:\\Windows\\System32\\cmd.exe'
+      $_al_find   = 'C:\\Windows\\System32\\findstr.exe'
+      $_al_inherit = $_allowlist_dir ? {
+        $_config_dir => '',
+        default      => '(OI)(CI)',
+      }
+      exec { 'ferrogate-mia-allowlist-dir-acl':
+        command  => "${_al_icacls} \"${_allowlist_dir}\" /grant \"${_toml_acl_group}:${_al_inherit}(M)\"",
+        unless   => "${_al_cmd} /s /c \"${_al_icacls} \"${_allowlist_dir}\" | ${_al_find} /i /r /c:\"${_toml_acl_group}:.*(M)\"\"",
+        provider => 'windows',
+      }
+      exec { 'ferrogate-mia-allowlist-file-acl':
+        command  => "${_al_icacls} \"${allowlist_path}\" /grant \"${_toml_acl_group}:(M)\"",
+        onlyif   => "${_al_cmd} /s /c \"if exist \"${allowlist_path}\" (exit 0) else (exit 1)\"",
+        unless   => "${_al_cmd} /s /c \"${_al_icacls} \"${allowlist_path}\" | ${_al_find} /i /r /c:\"${_toml_acl_group}:.*(M)\"\"",
+        provider => 'windows',
+        require  => Exec['ferrogate-mia-allowlist-dir-acl'],
+      }
+      if $manage_package {
+        Package[$package_name] -> Exec['ferrogate-mia-allowlist-dir-acl']
+      }
+      if $_manage_allowlist_dir {
+        File[$_allowlist_dir] -> Exec['ferrogate-mia-allowlist-dir-acl']
+      }
+    } else {
+      file { $allowlist_path:
+        group => $_toml_group,
+        mode  => '0664',
+      }
+      if $manage_package {
+        Package[$package_name] -> File[$allowlist_path]
+      }
+      if $_manage_allowlist_dir {
+        File[$_allowlist_dir] -> File[$allowlist_path]
+      }
     }
   }
 

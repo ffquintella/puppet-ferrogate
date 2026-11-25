@@ -658,6 +658,77 @@ describe 'ferrogate::mia' do
     end
   end
 
+  context 'on Linux the status group can update the allowlist' do
+    let(:facts) { MIA_FACTS }
+    let(:params) do
+      {
+        allowlist_path:  '/var/lib/ferrogate/allowlist.cbor',
+        allowlist_key:   '/var/lib/ferrogate/allowlist.pub',
+        allowlist_fetch: true,
+      }
+    end
+
+    it 'makes the allowlist dir setgid group-writable for the status group' do
+      is_expected.to contain_file('/var/lib/ferrogate')
+        .with(group: 'ferrogate-status', mode: '2775')
+    end
+
+    it 'group-owns the allowlist file without creating it' do
+      is_expected.to contain_file('/var/lib/ferrogate/allowlist.cbor')
+        .with(group: 'ferrogate-status', mode: '0664')
+        .without_ensure
+    end
+  end
+
+  context 'on Linux with manage_allowlist_acl disabled' do
+    let(:facts) { MIA_FACTS }
+    let(:params) do
+      {
+        allowlist_path:       '/var/lib/ferrogate/allowlist.cbor',
+        allowlist_key:        '/var/lib/ferrogate/allowlist.pub',
+        manage_allowlist_acl: false,
+      }
+    end
+
+    it { is_expected.to contain_file('/var/lib/ferrogate').with(group: 'root', mode: '0755') }
+    it { is_expected.not_to contain_file('/var/lib/ferrogate/allowlist.cbor') }
+  end
+
+  context 'on Windows the status group can update the allowlist' do
+    let(:facts) { WINDOWS_FACTS }
+    let(:params) do
+      {
+        allowlist_path: 'C:/ProgramData/ferrogate-data/allowlist.cbor',
+        allowlist_key:  'C:/ProgramData/ferrogate-data/allowlist.pub',
+      }
+    end
+
+    it 'grants Modify, inherited, on the allowlist directory' do
+      is_expected.to contain_exec('ferrogate-mia-allowlist-dir-acl')
+        .with_command(%r{icacls\.exe "C:/ProgramData/ferrogate-data" /grant "FerroGateStatus:\(OI\)\(CI\)\(M\)"})
+    end
+
+    it 'grants Modify on the allowlist file when it exists' do
+      is_expected.to contain_exec('ferrogate-mia-allowlist-file-acl')
+        .with_command(%r{/grant "FerroGateStatus:\(M\)"})
+    end
+  end
+
+  context 'on Windows with the allowlist inside config_dir' do
+    let(:facts) { WINDOWS_FACTS }
+    let(:params) do
+      {
+        allowlist_path: 'C:/ProgramData/ferrogate/allowlist.cbor',
+        allowlist_key:  'C:/ProgramData/ferrogate/allowlist.pub',
+      }
+    end
+
+    it 'does not inherit onto mia.env' do
+      is_expected.to contain_exec('ferrogate-mia-allowlist-dir-acl')
+        .with_command(%r{icacls\.exe "C:/ProgramData/ferrogate" /grant "FerroGateStatus:\(M\)"})
+    end
+  end
+
   context 'on Windows with manage_toml_acl disabled' do
     let(:facts) { WINDOWS_FACTS }
     let(:params) { { manage_toml_acl: false } }
